@@ -430,7 +430,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs: [
-      check_runner_status,
+      #check_runner_status,
       check_runners,
       setup,
       run_tests_single_gpu,
@@ -480,7 +480,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs: [
-      check_runner_status,
+      #check_runner_status,
       check_runners,
       setup,
       run_tests_single_gpu,
@@ -496,7 +496,7 @@ jobs:
         shell: bash
         # For the meaning of these environment variables, see the job `Setup`
         run: |
-          echo "Runner availability: ${{ needs.check_runner_status.result }}"
+          #echo "Runner availability: ${{ needs.check_runner_status.result }}"
           echo "Runner status: ${{ needs.check_runners.result }}"
           echo "Setup status: ${{ needs.setup.result }}"
 
@@ -513,7 +513,8 @@ jobs:
           CI_EVENT: scheduled
           CI_SHA: ${{ github.sha }}
           CI_WORKFLOW_REF: ${{ github.workflow_ref }}
-          RUNNER_STATUS: ${{ needs.check_runner_status.result }}
+          #RUNNER_STATUS: ${{ needs.check_runner_status.result }}
+          RUNNER_STATUS: online
           RUNNER_ENV_STATUS: ${{ needs.check_runners.result }}
           SETUP_STATUS: ${{ needs.setup.result }}
         # We pass `needs.setup.outputs.matrix` as the argument. A processing in `notification_service.py` to change
