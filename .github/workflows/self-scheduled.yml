@@ -25,21 +25,21 @@ env:
   RUN_PT_TF_CROSS_TESTS: 1
 
 jobs:
-  check_runner_status:
-    name: Check Runner Status
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout transformers
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 2
+  #check_runner_status:
+  #  name: Check Runner Status
+  #  runs-on: ubuntu-latest
+  #  steps:
+  #    - name: Checkout transformers
+  #      uses: actions/checkout@v3
+  #      with:
+  #        fetch-depth: 2
 
-      - name: Check Runner Status
-        run: python utils/check_self_hosted_runner.py --target_runners single-gpu-scheduled-ci-runner-docker,multi-gpu-scheduled-ci-runner-docker --token ${{ secrets.ACCESS_REPO_INFO_TOKEN }}
+  #    - name: Check Runner Status
+  #      run: python utils/check_self_hosted_runner.py --target_runners single-gpu-scheduled-ci-runner-docker,multi-gpu-scheduled-ci-runner-docker --token ${{ secrets.ACCESS_REPO_INFO_TOKEN }}
 
   check_runners:
     name: Check Runners
-    needs: check_runner_status
+    #needs: check_runner_status
     strategy:
       matrix:
         machine_type: [single-gpu, multi-gpu]
