@@ -160,6 +160,8 @@ jobs:
         folders: ${{ fromJson(needs.setup.outputs.matrix) }}
         machine_type: [multi-gpu]
     runs-on: ['${{ matrix.machine_type }}', nvidia-gpu, t4, daily-ci]
+    env:
+      CUDA_VISIBLE_DEVICES: 0,1
     container:
       image: huggingface/transformers-all-latest-gpu
       options: --gpus all --shm-size "64gb" --ipc host -v /mnt/cache/.cache/huggingface:/mnt/cache/
