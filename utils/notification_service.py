@@ -983,6 +983,8 @@ if __name__ == "__main__":
         del additional_files["PyTorch pipelines"]
         del additional_files["TensorFlow pipelines"]
     elif ci_event.startswith("Scheduled CI (AMD)"):
+        del additional_files["Examples directory"]
+        del additional_files["PyTorch pipelines"]
         del additional_files["TensorFlow pipelines"]
         del additional_files["Torch CUDA extension tests"]
     elif ci_event.startswith("Push CI (AMD)"):
