@@ -18,15 +18,12 @@
 import argparse
 import json
 import os
-
-import fairseq
-import torch
-from fairseq.data import Dictionary
 from collections import namedtuple
 
-import torch
 import fairseq
+import torch
 from fairseq import utils
+from fairseq.data import Dictionary
 
 from transformers import (
     Wav2Vec2ConformerConfig,
@@ -42,7 +39,7 @@ from transformers import (
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 
-SAMPLE_RATE = 8000 # 8000, 16000
+SAMPLE_RATE = 8000  # 8000, 16000
 MAPPING = {
     "post_extract_proj": "feature_projection.projection",
     "encoder.pos_conv.0": "encoder.pos_conv_embed.conv",
@@ -318,9 +315,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--not_finetuned", action="store_true", help="Whether the model to convert is a fine-tuned model or not"
     )
-    parser.add_argument(
-        "--extension_path", default=None, type=str, help="Extension path to override the task"
-    )
+    parser.add_argument("--extension_path", default=None, type=str, help="Extension path to override the task")
     args = parser.parse_args()
     convert_wav2vec2_conformer_checkpoint(
         args.checkpoint_path,
