@@ -49,7 +49,7 @@ jobs:
 
       - name: Run doctests
         run: |
-          sleep 75m
+          sleep 90m
 
       - name: Failure short reports
         if: ${{ failure() }}
