@@ -3,7 +3,7 @@ name: Doctests
 on:
   push:
     branches:
-      - doctest*
+      - try_doc
   repository_dispatch:
   schedule:
     - cron: "17 2 * * *"
@@ -32,6 +32,15 @@ jobs:
       - name: NVIDIA-SMI
         run: |
           nvidia-smi
+
+      - name: checkout 9660e27cd0ada58b60d7e6ea0558c878c5e20580
+        run: |
+          git config --global --add safe.directory /__w/transformers/transformers
+          git fetch origin
+          git checkout main
+          git pull origin main
+          git checkout 9660e27cd0ada58b60d7e6ea0558c878c5e20580
+          git status
 
       - name: Install transformers in edit mode
         run: python3 -m pip install -e .[flax]
