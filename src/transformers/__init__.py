@@ -248,6 +248,7 @@ _import_structure = {
         "CanineConfig",
         "CanineTokenizer",
     ],
+    "models.chatglm": ["CHATGLM_PRETRAINED_CONFIG_ARCHIVE_MAP", "ChatGlmConfig"],
     "models.chinese_clip": [
         "CHINESE_CLIP_PRETRAINED_CONFIG_ARCHIVE_MAP",
         "ChineseCLIPConfig",
@@ -1720,6 +1721,14 @@ else:
             "CanineModel",
             "CaninePreTrainedModel",
             "load_tf_weights_in_canine",
+        ]
+    )
+    _import_structure["models.chatglm"].extend(
+        [
+            "ChatGlmForCausalLM",
+            "ChatGlmForSequenceClassification",
+            "ChatGlmModel",
+            "ChatGlmPreTrainedModel",
         ]
     )
     _import_structure["models.chinese_clip"].extend(
@@ -4946,6 +4955,7 @@ if TYPE_CHECKING:
         CanineConfig,
         CanineTokenizer,
     )
+    from .models.chatglm import CHATGLM_PRETRAINED_CONFIG_ARCHIVE_MAP, ChatGlmConfig
     from .models.chinese_clip import (
         CHINESE_CLIP_PRETRAINED_CONFIG_ARCHIVE_MAP,
         ChineseCLIPConfig,
@@ -6356,6 +6366,12 @@ if TYPE_CHECKING:
             CanineModel,
             CaninePreTrainedModel,
             load_tf_weights_in_canine,
+        )
+        from .models.chatglm import (
+            ChatGlmForCausalLM,
+            ChatGlmForSequenceClassification,
+            ChatGlmModel,
+            ChatGlmPreTrainedModel,
         )
         from .models.chinese_clip import (
             CHINESE_CLIP_PRETRAINED_MODEL_ARCHIVE_LIST,
