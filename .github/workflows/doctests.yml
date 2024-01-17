@@ -40,6 +40,7 @@ jobs:
           git checkout main
           git pull origin main
           git checkout 9660e27cd0ada58b60d7e6ea0558c878c5e20580
+          git checkout try_doc
           git status
 
       - name: Install transformers in edit mode
