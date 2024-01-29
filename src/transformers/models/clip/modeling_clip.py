@@ -16,9 +16,10 @@
 
 
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import nn
 
@@ -30,10 +31,16 @@ from ...utils import (
     ModelOutput,
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
+    is_flash_attn_2_available,
     logging,
     replace_return_docstrings,
 )
 from .configuration_clip import CLIPConfig, CLIPTextConfig, CLIPVisionConfig
+
+
+if is_flash_attn_2_available():
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
+    from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
 
 
 logger = logging.get_logger(__name__)
@@ -56,6 +63,19 @@ def clip_loss(similarity: torch.Tensor) -> torch.Tensor:
     caption_loss = contrastive_loss(similarity)
     image_loss = contrastive_loss(similarity.t())
     return (caption_loss + image_loss) / 2.0
+
+
+# Copied from transformers.models.llama.modeling_llama._get_unpad_data
+def _get_unpad_data(attention_mask):
+    seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
+    indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
+    max_seqlen_in_batch = seqlens_in_batch.max().item()
+    cu_seqlens = F.pad(torch.cumsum(seqlens_in_batch, dim=0, dtype=torch.torch.int32), (1, 0))
+    return (
+        indices,
+        cu_seqlens,
+        max_seqlen_in_batch,
+    )
 
 
 @dataclass
@@ -224,7 +244,7 @@ class CLIPTextEmbeddings(nn.Module):
 class CLIPAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config):
+    def __init__(self, config, is_causal: bool = False):
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -237,6 +257,7 @@ class CLIPAttention(nn.Module):
             )
         self.scale = self.head_dim**-0.5
         self.dropout = config.attention_dropout
+        self.is_causal = is_causal
 
         self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
         self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
@@ -254,7 +275,6 @@ class CLIPAttention(nn.Module):
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
-
         bsz, tgt_len, embed_dim = hidden_states.size()
 
         # get query proj
@@ -325,6 +345,145 @@ class CLIPAttention(nn.Module):
         return attn_output, attn_weights_reshaped
 
 
+class CLIPFlashAttention2(CLIPAttention):
+    """
+    CLIP flash attention module. This module inherits from `CLIPAttention` as the weights of the module stays
+    untouched. The only required change would be on the forward pass where it needs to correctly call the public API of
+    flash attention and deal with padding tokens in case the input contains any of them.
+    """
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        causal_attention_mask: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Input shape: Batch x Time x Channel"""
+        if output_attentions:
+            raise ValueError("CLIPFlashAttention2 does not support output_attentions")
+
+        if self.is_causal and causal_attention_mask is None:
+            raise ValueError("CLIPFlashAttention2 has causal=True but no causal_attention_mask provided")
+
+        bsz, tgt_len, embed_dim = hidden_states.size()
+
+        # [batch_size, tgt_len, embed_dim]
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
+
+        # [batch_size, tgt_len, embed_dim] -> [batch_size, tgt_len, num_heads, head_dim]
+        query_states = query_states.view(bsz, tgt_len, self.num_heads, self.head_dim).contiguous()
+        key_states = key_states.view(bsz, tgt_len, self.num_heads, self.head_dim).contiguous()
+        value_states = value_states.view(bsz, tgt_len, self.num_heads, self.head_dim).contiguous()
+
+        attn_output = self._flash_attention_forward(
+            query_states=query_states,
+            key_states=key_states,
+            value_states=value_states,
+            attention_mask=attention_mask,
+            query_length=tgt_len,
+            dropout=self.dropout,
+            softmax_scale=self.scale,
+        )
+        # [batch_size, tgt_len, num_heads, head_dim] -> [batch_size, tgt_len, embed_dim]
+        attn_output = attn_output.view(bsz, tgt_len, embed_dim)
+        attn_output = self.out_proj(attn_output)
+
+        return attn_output, None
+
+    # Copied from transformers.models.llama.modeling_llama.LlamaFlashAttention2._flash_attention_forward
+    def _flash_attention_forward(
+        self, query_states, key_states, value_states, attention_mask, query_length, dropout=0.0, softmax_scale=None
+    ) -> torch.Tensor:
+        """
+        Calls the forward method of Flash Attention - if the input hidden states contain at least one padding token
+        first unpad the input, then computes the attention scores and pad the final attention scores.
+
+        Args:
+            query_states (`torch.Tensor`):
+                Input query states to be passed to Flash Attention API
+            key_states (`torch.Tensor`):
+                Input key states to be passed to Flash Attention API
+            value_states (`torch.Tensor`):
+                Input value states to be passed to Flash Attention API
+            attention_mask (`torch.Tensor`):
+                The padding mask - corresponds to a tensor of size `(batch_size, seq_len)` where 0 stands for the
+                position of padding tokens and 1 for the position of non-padding tokens.
+            dropout (`int`, *optional*):
+                Attention dropout
+            softmax_scale (`float`, *optional*):
+                The scaling of QK^T before applying softmax. Default to 1 / sqrt(head_dim)
+        """
+        # Contains at least one padding token in the sequence
+        if attention_mask is not None:
+            batch_size = query_states.shape[0]
+            query_states, key_states, value_states, indices_q, cu_seq_lens, max_seq_lens = self._upad_input(
+                query_states, key_states, value_states, attention_mask, query_length
+            )
+            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+            attn_output_unpad = flash_attn_varlen_func(
+                query_states,
+                key_states,
+                value_states,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_in_batch_q,
+                max_seqlen_k=max_seqlen_in_batch_k,
+                dropout_p=dropout,
+                softmax_scale=softmax_scale,
+                causal=self.is_causal,
+            )
+
+            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
+        else:
+            attn_output = flash_attn_func(
+                query_states, key_states, value_states, dropout, softmax_scale=softmax_scale, causal=self.is_causal
+            )
+
+        return attn_output
+
+    def _upad_input(self, query_layer, key_layer, value_layer, attention_mask, query_length):
+        indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
+        batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
+
+        key_layer = index_first_axis(
+            key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
+        )
+        value_layer = index_first_axis(
+            value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
+        )
+        if query_length == kv_seq_len:
+            query_layer = index_first_axis(
+                query_layer.reshape(batch_size * kv_seq_len, self.num_heads, head_dim), indices_k
+            )
+            cu_seqlens_q = cu_seqlens_k
+            max_seqlen_in_batch_q = max_seqlen_in_batch_k
+            indices_q = indices_k
+        elif query_length == 1:
+            max_seqlen_in_batch_q = 1
+            # There is a memcpy here, that is very bad.
+            cu_seqlens_q = torch.arange(batch_size + 1, dtype=torch.int32, device=query_layer.device)
+            indices_q = cu_seqlens_q[:-1]
+            query_layer = query_layer.squeeze(1)
+        else:
+            # The :q_len slice assumes right padding.
+            attention_mask = attention_mask[:, :query_length]
+            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, attention_mask)
+
+        return (
+            query_layer,
+            key_layer,
+            value_layer,
+            indices_q,
+            (cu_seqlens_q, cu_seqlens_k),
+            (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
+        )
+
+
 class CLIPMLP(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -340,11 +499,18 @@ class CLIPMLP(nn.Module):
         return hidden_states
 
 
+CLIP_ATTENTION_CLASSES = {
+    "default": CLIPAttention,
+    "flash_attention_2": CLIPFlashAttention2,
+}
+
+
 class CLIPEncoderLayer(nn.Module):
-    def __init__(self, config: CLIPConfig):
+    def __init__(self, config: CLIPConfig, is_causal: bool = False):
         super().__init__()
         self.embed_dim = config.hidden_size
-        self.self_attn = CLIPAttention(config)
+        attn_type = "flash_attention_2" if getattr(config, "_flash_attn_2_enabled", False) else "default"
+        self.self_attn = CLIP_ATTENTION_CLASSES[attn_type](config, is_causal=is_causal)
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
         self.mlp = CLIPMLP(config)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
@@ -399,6 +565,7 @@ class CLIPPreTrainedModel(PreTrainedModel):
     config_class = CLIPConfig
     base_model_prefix = "clip"
     supports_gradient_checkpointing = True
+    _supports_flash_attn_2 = True
 
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -561,10 +728,12 @@ class CLIPEncoder(nn.Module):
         config: CLIPConfig
     """
 
-    def __init__(self, config: CLIPConfig):
+    def __init__(self, config: CLIPConfig, is_causal: bool = False):
         super().__init__()
         self.config = config
-        self.layers = nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList(
+            [CLIPEncoderLayer(config, is_causal=is_causal) for _ in range(config.num_hidden_layers)]
+        )
         self.gradient_checkpointing = False
 
     def forward(
@@ -655,7 +824,7 @@ class CLIPTextTransformer(nn.Module):
         self.config = config
         embed_dim = config.hidden_size
         self.embeddings = CLIPTextEmbeddings(config)
-        self.encoder = CLIPEncoder(config)
+        self.encoder = CLIPEncoder(config, is_causal=True)
         self.final_layer_norm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
 
         # For `pooled_output` computation
@@ -697,8 +866,11 @@ class CLIPTextTransformer(nn.Module):
         )
         # expand attention_mask
         if attention_mask is not None:
-            # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            attention_mask = _prepare_4d_attention_mask(attention_mask, hidden_states.dtype)
+            if getattr(self.config, "_flash_attn_2_enabled", False):
+                attention_mask = attention_mask if 0 in attention_mask else None
+            else:
+                # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+                attention_mask = _prepare_4d_attention_mask(attention_mask, hidden_states.dtype)
 
         encoder_outputs = self.encoder(
             inputs_embeds=hidden_states,
@@ -813,7 +985,7 @@ class CLIPVisionTransformer(nn.Module):
 
         self.embeddings = CLIPVisionEmbeddings(config)
         self.pre_layrnorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
-        self.encoder = CLIPEncoder(config)
+        self.encoder = CLIPEncoder(config, is_causal=False)
         self.post_layernorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
 
     @add_start_docstrings_to_model_forward(CLIP_VISION_INPUTS_DOCSTRING)
@@ -925,6 +1097,7 @@ class CLIPVisionModel(CLIPPreTrainedModel):
 @add_start_docstrings(CLIP_START_DOCSTRING)
 class CLIPModel(CLIPPreTrainedModel):
     config_class = CLIPConfig
+    _supports_flash_attn_2 = True
 
     def __init__(self, config: CLIPConfig):
         super().__init__(config)
@@ -1146,6 +1319,33 @@ class CLIPModel(CLIPPreTrainedModel):
             text_model_output=text_outputs,
             vision_model_output=vision_outputs,
         )
+
+    @classmethod
+    def _check_and_enable_flash_attn_2(
+        cls, config, torch_dtype: Optional[torch.dtype] = None, device_map: Optional[Union[str, Dict[str, int]]] = None
+    ):
+        """
+        `_check_and_enable_flash_attn_2` originally don't expand flash attention enabling to the model
+        sub-configurations. We override the original method to make sure that Bark sub-models are using Flash Attention
+        if necessary.
+
+        If you don't know about Flash Attention, check out the official repository of flash attention:
+        https://github.com/Dao-AILab/flash-attention
+
+        For using Flash Attention 1.0 you can do it directly via the `BetterTransformer` API, have a look at this
+        specific section of the documentation to learn more about it:
+        https://huggingface.co/docs/transformers/main/en/perf_infer_gpu_one#decoder-models
+
+        The method checks if the current setup is compatible with Flash Attention as it requires the model to be in
+        half precision and not ran on CPU.
+
+        If all checks pass, the method will create an attribute in the config `_flash_attn_2_enabled` so that the model
+        can initialize the correct attention module
+        """
+        config = super()._check_and_enable_flash_attn_2(config, torch_dtype, device_map)
+        config.text_config._flash_attn_2_enabled = getattr(config, "_flash_attn_2_enabled", False)
+        config.vision_config._flash_attn_2_enabled = getattr(config, "_flash_attn_2_enabled", False)
+        return config
 
 
 @add_start_docstrings(
