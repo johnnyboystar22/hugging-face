@@ -17,6 +17,7 @@ env:
   MKL_NUM_THREADS: 16
   SIGOPT_API_TOKEN: ${{ secrets.SIGOPT_API_TOKEN }}
   TF_FORCE_GPU_ALLOW_GROWTH: true
+  HF_HUB_ENABLE_HF_TRANSFER: 1
 
 jobs:
   run_doctests:
