@@ -42,6 +42,7 @@ from . import (
     byt5,
     camembert,
     canine,
+    character_bert,
     chinese_clip,
     clap,
     clip,

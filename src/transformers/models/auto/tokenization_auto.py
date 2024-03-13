@@ -106,6 +106,10 @@ else:
                 ),
             ),
             ("canine", ("CanineTokenizer", None)),
+            (
+                "character_bert",
+                ("CharacterBertTokenizer", None),
+            ),
             ("chinese_clip", ("BertTokenizer", "BertTokenizerFast" if is_tokenizers_available() else None)),
             (
                 "clap",

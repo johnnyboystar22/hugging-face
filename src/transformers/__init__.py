@@ -248,6 +248,11 @@ _import_structure = {
         "CanineConfig",
         "CanineTokenizer",
     ],
+    "models.character_bert": [
+        "CHARACTER_BERT_PRETRAINED_CONFIG_ARCHIVE_MAP",
+        "CharacterBertConfig",
+        "CharacterBertTokenizer",
+    ],
     "models.chinese_clip": [
         "CHINESE_CLIP_PRETRAINED_CONFIG_ARCHIVE_MAP",
         "ChineseCLIPConfig",
@@ -1752,6 +1757,22 @@ else:
             "CanineModel",
             "CaninePreTrainedModel",
             "load_tf_weights_in_canine",
+        ]
+    )
+    _import_structure["models.character_bert"].extend(
+        [
+            "CHARACTER_BERT_PRETRAINED_MODEL_ARCHIVE_LIST",
+            "CharacterBertForMaskedLM",
+            "CharacterBertForMultipleChoice",
+            "CharacterBertForNextSentencePrediction",
+            "CharacterBertForPreTraining",
+            "CharacterBertForQuestionAnswering",
+            "CharacterBertForSequenceClassification",
+            "CharacterBertForTokenClassification",
+            "CharacterBertLayer",
+            "CharacterBertModel",
+            "CharacterBertPreTrainedModel",
+            "load_tf_weights_in_character_bert",
         ]
     )
     _import_structure["models.chinese_clip"].extend(
@@ -5066,6 +5087,11 @@ if TYPE_CHECKING:
         CanineConfig,
         CanineTokenizer,
     )
+    from .models.character_bert import (
+        CHARACTER_BERT_PRETRAINED_CONFIG_ARCHIVE_MAP,
+        CharacterBertConfig,
+        CharacterBertTokenizer,
+    )
     from .models.chinese_clip import (
         CHINESE_CLIP_PRETRAINED_CONFIG_ARCHIVE_MAP,
         ChineseCLIPConfig,
@@ -6495,6 +6521,20 @@ if TYPE_CHECKING:
             CanineModel,
             CaninePreTrainedModel,
             load_tf_weights_in_canine,
+        )
+        from .models.character_bert import (
+            CHARACTER_BERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+            CharacterBertForMaskedLM,
+            CharacterBertForMultipleChoice,
+            CharacterBertForNextSentencePrediction,
+            CharacterBertForPreTraining,
+            CharacterBertForQuestionAnswering,
+            CharacterBertForSequenceClassification,
+            CharacterBertForTokenClassification,
+            CharacterBertLayer,
+            CharacterBertModel,
+            CharacterBertPreTrainedModel,
+            load_tf_weights_in_character_bert,
         )
         from .models.chinese_clip import (
             CHINESE_CLIP_PRETRAINED_MODEL_ARCHIVE_LIST,
