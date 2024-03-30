@@ -1174,6 +1174,7 @@ else:
     _import_structure["models.segformer"].extend(["SegformerFeatureExtractor", "SegformerImageProcessor"])
     _import_structure["models.seggpt"].extend(["SegGptImageProcessor"])
     _import_structure["models.siglip"].append("SiglipImageProcessor")
+    _import_structure["models.superglue"].extend(["SuperGlueImageProcessor"])
     _import_structure["models.superpoint"].extend(["SuperPointImageProcessor"])
     _import_structure["models.swin2sr"].append("Swin2SRImageProcessor")
     _import_structure["models.tvp"].append("TvpImageProcessor")
@@ -3194,6 +3195,7 @@ else:
     _import_structure["models.superglue"].extend(
         [
             "SuperGlueModel",
+            "SuperGlueForImageMatching",
             "SuperGluePreTrainedModel",
         ]
     )
@@ -6028,6 +6030,7 @@ if TYPE_CHECKING:
             MODEL_FOR_IMAGE_TO_IMAGE_MAPPING,
             MODEL_FOR_INSTANCE_SEGMENTATION_MAPPING,
             MODEL_FOR_KEYPOINT_DETECTION_MAPPING,
+            MODEL_FOR_IMAGE_MATCHING_MAPPING,
             MODEL_FOR_MASK_GENERATION_MAPPING,
             MODEL_FOR_MASKED_IMAGE_MODELING_MAPPING,
             MODEL_FOR_MASKED_LM_MAPPING,
@@ -6069,6 +6072,7 @@ if TYPE_CHECKING:
             AutoModelForImageToImage,
             AutoModelForInstanceSegmentation,
             AutoModelForKeypointDetection,
+            AutoModelForImageMatching,
             AutoModelForMaskedImageModeling,
             AutoModelForMaskedLM,
             AutoModelForMaskGeneration,
@@ -7512,7 +7516,8 @@ if TYPE_CHECKING:
         )
         from .models.superglue import (
             SuperGlueModel,
-            SuperGluePreTrainedModel
+            SuperGlueForImageMatching,
+            SuperGluePreTrainedModel,
         )
         from .models.superpoint import (
             SuperPointForKeypointDetection,
