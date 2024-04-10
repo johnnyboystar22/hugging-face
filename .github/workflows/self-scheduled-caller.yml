@@ -13,7 +13,7 @@ jobs:
   deepspeed-ci:
     name: DeepSpeed CI
     #change repo to allow different branch
-    uses: huggingface/hf-workflows/.github/workflows/transformers-tests.yml@test-ci  
+    uses: huggingface/hf-workflows/.github/workflows/transformers-test.yml@test-ci  
     with:
       job: run_all_tests_torch_cuda_extensions_gpu
       slack_report_channel: "#transformers-ci-daily-deepspeed"
