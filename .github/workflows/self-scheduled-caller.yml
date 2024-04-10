@@ -12,6 +12,7 @@ on:
 jobs:
   deepspeed-ci:
     name: DeepSpeed CI
+    #change repo to allow different branch
     uses: huggingface/infra-github-runners/.github/workflows/transformers-tests.yml@main
     with:
       job: run_all_tests_torch_cuda_extensions_gpu
