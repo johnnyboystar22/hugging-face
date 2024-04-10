@@ -12,7 +12,7 @@ on:
 jobs:
   deepspeed-ci:
     name: DeepSpeed CI
-    uses: ./.github/workflows/self-scheduled.yml
+    uses: huggingface/infra-github-runners/.github/workflows/transformers-tests.yml@main
     with:
       job: run_all_tests_torch_cuda_extensions_gpu
       slack_report_channel: "#transformers-ci-daily-deepspeed"
