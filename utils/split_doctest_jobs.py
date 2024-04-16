@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     sorted_file_dirs = sorted(refined_test_collection_map.keys())
 
-    test_collection_map = ["src/transformers/models/siglip"]
+    sorted_file_dirs = ["src/transformers/models/siglip"]
 
     test_collection_map = {}
     for file_dir in sorted_file_dirs:
