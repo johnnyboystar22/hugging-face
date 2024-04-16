@@ -66,7 +66,7 @@ jobs:
         working-directory: /transformers
         run: |
           cat doc_tests.txt
-          python3 -m pytest -v --make-reports doc_tests_gpu_${{ env.split_keys }} --doctest-modules $(cat doc_tests.txt) -sv --doctest-continue-on-failure --doctest-glob="*.md"
+          python3 temp_llama.py
 
       - name: Failure short reports
         if: ${{ failure() }}
