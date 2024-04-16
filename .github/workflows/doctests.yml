@@ -22,6 +22,13 @@ jobs:
       job_splits: ${{ steps.set-matrix.outputs.job_splits }}
       split_keys: ${{ steps.set-matrix.outputs.split_keys }}
     steps:
+      - name: check system
+        working-directory: /transformers
+        run: |
+          ls -la /mnt/cache
+          df -h --total
+          free -g
+
       - name: Update clone
         working-directory: /transformers
         run: |
