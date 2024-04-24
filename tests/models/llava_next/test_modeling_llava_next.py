@@ -32,7 +32,6 @@ from transformers.testing_utils import (
     require_torch,
     slow,
     torch_device,
-    require_torch_fp16,
 )
 
 from ...generation.test_utils import GenerationTesterMixin
@@ -257,7 +256,6 @@ class LlavaNextForConditionalGenerationModelTest(ModelTesterMixin, GenerationTes
     @unittest.skip(reason="CPU offload is not yet supported")
     def test_cpu_offload(self):
         pass
-
 
 
 @require_torch
