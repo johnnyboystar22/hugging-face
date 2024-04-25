@@ -13,6 +13,7 @@ jobs:
   deepspeed-ci:
     name: DeepSpeed CI
     #change repo to allow different branch
+    #changed on WF, without shm size.
     uses: huggingface/hf-workflows/.github/workflows/transformers-test.yml@test-ci  
     with:
       job: run_all_tests_torch_cuda_extensions_gpu
