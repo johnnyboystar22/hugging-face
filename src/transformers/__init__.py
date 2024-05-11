@@ -3222,7 +3222,6 @@ else:
     )
     _import_structure["models.superglue"].extend(
         [
-            "SuperGlueModel",
             "SuperGlueForImageMatching",
             "SuperGluePreTrainedModel",
         ]
@@ -7565,7 +7564,6 @@ if TYPE_CHECKING:
             Starcoder2PreTrainedModel,
         )
         from .models.superglue import (
-            SUPERGLUE_PRETRAINED_MODEL_ARCHIVE_LIST,
             SuperGlueForImageMatching,
             SuperGluePreTrainedModel,
         )
