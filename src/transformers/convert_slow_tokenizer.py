@@ -23,6 +23,7 @@ import warnings
 from typing import Dict, List, Tuple
 
 from packaging import version
+
 from tokenizers import AddedToken, Regex, Tokenizer, decoders, normalizers, pre_tokenizers, processors
 from tokenizers.models import BPE, Unigram, WordPiece
 
@@ -1337,7 +1338,10 @@ class GemmaConvert(SpmConverter):
 
 class LlamaConverter(SpmConverter):
     handle_byte_fallback = True
-
+    def __init__(self, original_tokenizer, legacy=True, **kwargs):
+        super().__init__(original_tokenizer, **kwargs)
+        self.legacy = legacy
+    
     def vocab(self, proto):
         vocab = [
             (self.original_tokenizer.convert_ids_to_tokens(0), 0.0),
@@ -1352,14 +1356,17 @@ class LlamaConverter(SpmConverter):
         return unk_id
 
     def decoder(self, replacement, add_prefix_space):
-        sequence = [
-            decoders.Replace("▁", " "),
-            decoders.ByteFallback(),
-            decoders.Fuse(),
-        ]
-        if add_prefix_space:
-            sequence += [decoders.Strip(content=" ", left=1)]
-        return decoders.Sequence(sequence)
+        if getattr(self.original_tokenizer, "legacy", self.legacy):
+            sequence = [
+                decoders.Replace("▁", " "),
+                decoders.ByteFallback(),
+                decoders.Fuse(),
+            ]
+            if add_prefix_space:
+                sequence += [decoders.Strip(content=" ", left=1)]
+            return decoders.Sequence(sequence)
+        else:
+            return super().decoder(replacement, add_prefix_space)
 
     def tokenizer(self, proto):
         model_type = proto.trainer_spec.model_type
@@ -1393,16 +1400,16 @@ class LlamaConverter(SpmConverter):
         return tokenizer
 
     def normalizer(self, proto):
-        if getattr(self.original_tokenizer, "legacy", True):
+        if getattr(self.original_tokenizer, "legacy", self.legacy):
             sequence = []
             if getattr(self.original_tokenizer, "add_prefix_space", True):
                 sequence += [normalizers.Prepend(prepend="▁")]
             sequence += [normalizers.Replace(pattern=" ", content="▁")]
             return normalizers.Sequence(sequence)
-        return None  # non-legacy, no normalizer
+        return None
 
     def pre_tokenizer(self, replacement, add_prefix_space):
-        if not getattr(self.original_tokenizer, "legacy", True):  # non-legacy, we need a replace
+        if not getattr(self.original_tokenizer, "legacy", self.legacy):
             prepend_scheme = _get_prepend_scheme(add_prefix_space, self.original_tokenizer)
             return pre_tokenizers.Metaspace(replacement=replacement, prepend_scheme=prepend_scheme, split=False)
         return None
