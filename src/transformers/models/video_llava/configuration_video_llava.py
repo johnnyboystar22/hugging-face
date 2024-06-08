@@ -15,12 +15,14 @@
 
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
+from ...utils.import_utils import register
 from ..auto import CONFIG_MAPPING
 
 
 logger = logging.get_logger(__name__)
 
 
+@register()
 class VideoLlavaConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`VideoLlavaForConditionalGeneration`]. It is used to instantiate an
@@ -124,3 +126,6 @@ class VideoLlavaConfig(PretrainedConfig):
 
         self.text_config = text_config
         super().__init__(**kwargs)
+
+
+__all__ = ["VideoLlavaConfig"]

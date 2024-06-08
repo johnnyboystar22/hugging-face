@@ -31,6 +31,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from ..auto import AutoModel, AutoModelForCausalLM
 from .configuration_video_llava import VideoLlavaConfig
 
@@ -119,6 +120,7 @@ VIDEO_LLAVA_START_DOCSTRING = r"""
 @add_start_docstrings(
     VIDEO_LLAVA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class VideoLlavaPreTrainedModel(PreTrainedModel):
     config_class = VideoLlavaConfig
     base_model_prefix = "model"
@@ -238,6 +240,7 @@ VIDEO_LLAVA_INPUTS_DOCSTRING = r"""
     """The VideoLlava model which consists of a vision backbone and a language model.""",
     VIDEO_LLAVA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class VideoLlavaForConditionalGeneration(VideoLlavaPreTrainedModel):
     def __init__(self, config: VideoLlavaConfig):
         super().__init__(config)
@@ -687,3 +690,6 @@ class VideoLlavaForConditionalGeneration(VideoLlavaPreTrainedModel):
 
     def _reorder_cache(self, *args, **kwargs):
         return self.language_model._reorder_cache(*args, **kwargs)
+
+
+__all__ = ["VideoLlavaPreTrainedModel", "VideoLlavaForConditionalGeneration"]

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...tokenization_utils import PreTrainedTokenizer, _is_control, _is_punctuation, _is_whitespace
 from ...utils import is_sentencepiece_available, is_sudachi_projection_available, logging
+from ...utils.import_utils import register
 
 
 if is_sentencepiece_available():
@@ -58,6 +59,7 @@ def whitespace_tokenize(text):
     return tokens
 
 
+@register()
 class BertJapaneseTokenizer(PreTrainedTokenizer):
     r"""
     Construct a BERT tokenizer for Japanese text.
@@ -372,6 +374,7 @@ class BertJapaneseTokenizer(PreTrainedTokenizer):
         return (vocab_file,)
 
 
+@register()
 class MecabTokenizer:
     """Runs basic tokenization with MeCab morphological parser."""
 
@@ -644,6 +647,7 @@ class JumanppTokenizer:
         return tokens
 
 
+@register()
 class CharacterTokenizer:
     """Runs Character tokenization."""
 
@@ -977,3 +981,6 @@ class SentencepieceTokenizer(object):
                 new_pieces.append(piece)
 
         return new_pieces
+
+
+__all__ = ["BertJapaneseTokenizer", "CharacterTokenizer", "MecabTokenizer"]

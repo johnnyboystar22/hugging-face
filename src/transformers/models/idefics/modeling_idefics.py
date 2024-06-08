@@ -28,11 +28,10 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.nn import CrossEntropyLoss
 
-from ... import PreTrainedModel
 from ...activations import ACT2FN
 from ...modeling_attn_mask_utils import _prepare_4d_causal_attention_mask_for_sdpa
 from ...modeling_outputs import ModelOutput
-from ...modeling_utils import PretrainedConfig
+from ...modeling_utils import PretrainedConfig, PreTrainedModel
 from ...pytorch_utils import ALL_LAYERNORM_LAYERS
 from ...utils import (
     add_start_docstrings,
@@ -40,6 +39,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_idefics import IdeficsConfig
 from .perceiver import IdeficsPerceiverResampler
 from .vision import IdeficsVisionTransformer
@@ -935,6 +935,7 @@ LLAMA_START_DOCSTRING = r"""
     "The bare LLaMA Model outputting raw hidden-states without any specific head on top.",
     LLAMA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class IdeficsPreTrainedModel(PreTrainedModel):
     config_class = IdeficsConfig
     base_model_prefix = "model"
@@ -1035,6 +1036,7 @@ LLAMA_INPUTS_DOCSTRING = r"""
     "The bare LLaMA Model outputting raw hidden-states without any specific head on top.",
     LLAMA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class IdeficsModel(IdeficsPreTrainedModel):
     """
     Transformer decoder consisting of `config.num_hidden_layers` layers. Each layer is a [`IdeficsDecoderLayer`]
@@ -1370,6 +1372,7 @@ class IdeficsModel(IdeficsPreTrainedModel):
         )
 
 
+@register(backends=("torch",))
 class IdeficsForVisionText2Text(IdeficsPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
     _tied_weights_keys = ["model.embed_tokens.weight", "lm_head.weight"]
@@ -1588,3 +1591,6 @@ class IdeficsForVisionText2Text(IdeficsPreTrainedModel):
         for layer_past in past:
             reordered_past += (tuple(past_state.index_select(0, beam_idx) for past_state in layer_past),)
         return reordered_past
+
+
+__all__ = ["IdeficsPreTrainedModel", "IdeficsModel", "IdeficsForVisionText2Text"]

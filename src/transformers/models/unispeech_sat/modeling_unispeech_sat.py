@@ -48,6 +48,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_unispeech_sat import UniSpeechSatConfig
 
 
@@ -1330,6 +1331,7 @@ class UniSpeechSatGumbelVectorQuantizer(nn.Module):
         return codevectors, perplexity
 
 
+@register(backends=("torch",))
 class UniSpeechSatPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -1469,6 +1471,7 @@ UNISPEECH_SAT_INPUTS_DOCSTRING = r"""
     "The bare UniSpeechSat Model transformer outputting raw hidden-states without any specific head on top.",
     UNISPEECH_SAT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class UniSpeechSatModel(UniSpeechSatPreTrainedModel):
     def __init__(self, config: UniSpeechSatConfig):
         super().__init__(config)
@@ -1590,6 +1593,7 @@ class UniSpeechSatModel(UniSpeechSatPreTrainedModel):
 
 
 @add_start_docstrings("""UniSpeechSat Model with a quantizer and `VQ` head on top.""", UNISPEECH_SAT_START_DOCSTRING)
+@register(backends=("torch",))
 class UniSpeechSatForPreTraining(UniSpeechSatPreTrainedModel):
     def __init__(self, config: UniSpeechSatConfig):
         super().__init__(config)
@@ -1738,6 +1742,7 @@ class UniSpeechSatForPreTraining(UniSpeechSatPreTrainedModel):
     """,
 )
 # Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForCTC with Wav2Vec2->UniSpeechSat, wav2vec2->unispeech_sat, WAV_2_VEC_2->UNISPEECH_SAT
+@register(backends=("torch",))
 class UniSpeechSatForCTC(UniSpeechSatPreTrainedModel):
     def __init__(self, config, target_lang: Optional[str] = None):
         super().__init__(config)
@@ -1896,6 +1901,7 @@ class UniSpeechSatForCTC(UniSpeechSatPreTrainedModel):
     """,
     UNISPEECH_SAT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class UniSpeechSatForSequenceClassification(UniSpeechSatPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -2021,6 +2027,7 @@ class UniSpeechSatForSequenceClassification(UniSpeechSatPreTrainedModel):
     UNISPEECH_SAT_START_DOCSTRING,
 )
 # Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForAudioFrameClassification with Wav2Vec2->UniSpeechSat, wav2vec2->unispeech_sat, WAV_2_VEC_2->UNISPEECH_SAT
+@register(backends=("torch",))
 class UniSpeechSatForAudioFrameClassification(UniSpeechSatPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -2190,6 +2197,7 @@ class TDNNLayer(nn.Module):
     UNISPEECH_SAT_START_DOCSTRING,
 )
 # Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForXVector with Wav2Vec2->UniSpeechSat, wav2vec2->unispeech_sat, WAV_2_VEC_2->UNISPEECH_SAT
+@register(backends=("torch",))
 class UniSpeechSatForXVector(UniSpeechSatPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -2334,3 +2342,14 @@ class UniSpeechSatForXVector(UniSpeechSatPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "UniSpeechSatPreTrainedModel",
+    "UniSpeechSatModel",
+    "UniSpeechSatForPreTraining",
+    "UniSpeechSatForCTC",
+    "UniSpeechSatForSequenceClassification",
+    "UniSpeechSatForAudioFrameClassification",
+    "UniSpeechSatForXVector",
+]

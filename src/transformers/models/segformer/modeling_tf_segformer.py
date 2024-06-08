@@ -38,6 +38,7 @@ from ...modeling_tf_utils import (
 )
 from ...tf_utils import shape_list, stable_softmax
 from ...utils import logging
+from ...utils.import_utils import register
 from .configuration_segformer import SegformerConfig
 
 
@@ -566,6 +567,7 @@ class TFSegformerEncoder(keras.layers.Layer):
 
 
 @keras_serializable
+@register(backends=("tf",))
 class TFSegformerMainLayer(keras.layers.Layer):
     config_class = SegformerConfig
 
@@ -633,6 +635,7 @@ class TFSegformerMainLayer(keras.layers.Layer):
                 self.encoder.build(None)
 
 
+@register(backends=("tf",))
 class TFSegformerPreTrainedModel(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -694,6 +697,7 @@ SEGFORMER_INPUTS_DOCSTRING = r"""
     "The bare SegFormer encoder (Mix-Transformer) outputting raw hidden-states without any specific head on top.",
     SEGFORMER_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFSegformerModel(TFSegformerPreTrainedModel):
     def __init__(self, config: SegformerConfig, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -744,6 +748,7 @@ class TFSegformerModel(TFSegformerPreTrainedModel):
     """,
     SEGFORMER_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFSegformerForImageClassification(TFSegformerPreTrainedModel, TFSequenceClassificationLoss):
     def __init__(self, config: SegformerConfig, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -839,6 +844,7 @@ class TFSegformerMLP(keras.layers.Layer):
                 self.proj.build([None, None, self.input_dim])
 
 
+@register(backends=("tf",))
 class TFSegformerDecodeHead(TFSegformerPreTrainedModel):
     def __init__(self, config: SegformerConfig, **kwargs):
         super().__init__(config, **kwargs)
@@ -918,6 +924,7 @@ class TFSegformerDecodeHead(TFSegformerPreTrainedModel):
     """SegFormer Model transformer with an all-MLP decode head on top e.g. for ADE20k, CityScapes.""",
     SEGFORMER_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFSegformerForSemanticSegmentation(TFSegformerPreTrainedModel):
     def __init__(self, config: SegformerConfig, **kwargs):
         super().__init__(config, **kwargs)
@@ -1034,3 +1041,13 @@ class TFSegformerForSemanticSegmentation(TFSegformerPreTrainedModel):
         if getattr(self, "decode_head", None) is not None:
             with tf.name_scope(self.decode_head.name):
                 self.decode_head.build(None)
+
+
+__all__ = [
+    "TFSegformerPreTrainedModel",
+    "TFSegformerModel",
+    "TFSegformerForImageClassification",
+    "TFSegformerDecodeHead",
+    "TFSegformerForSemanticSegmentation",
+    "TFSegformerMainLayer",
+]

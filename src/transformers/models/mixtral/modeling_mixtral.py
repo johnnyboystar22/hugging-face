@@ -51,7 +51,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
-from ...utils.import_utils import is_torch_fx_available
+from ...utils.import_utils import is_torch_fx_available, register
 from .configuration_mixtral import MixtralConfig
 
 
@@ -964,6 +964,7 @@ MIXTRAL_START_DOCSTRING = r"""
     "The bare Mixtral Model outputting raw hidden-states without any specific head on top.",
     MIXTRAL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 # Copied from transformers.models.qwen2.modeling_qwen2.Qwen2PreTrainedModel with Qwen2->Mixtral
 class MixtralPreTrainedModel(PreTrainedModel):
     config_class = MixtralConfig
@@ -1058,6 +1059,7 @@ MIXTRAL_INPUTS_DOCSTRING = r"""
     "The bare Mixtral Model outputting raw hidden-states without any specific head on top.",
     MIXTRAL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 # copied from transformers.models.mistral.modeling_mistral.MistralModel with MISTRAL->MIXTRAL,Mistral->Mixtral
 # TODO @longjie no longer copied from Mistral after static cache
 class MixtralModel(MixtralPreTrainedModel):
@@ -1255,6 +1257,7 @@ class MixtralModel(MixtralPreTrainedModel):
         )
 
 
+@register(backends=("torch",))
 class MixtralForCausalLM(MixtralPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1486,6 +1489,7 @@ class MixtralForCausalLM(MixtralPreTrainedModel):
     MIXTRAL_START_DOCSTRING,
 )
 # Copied from transformers.models.llama.modeling_llama.LlamaForSequenceClassification with Llama->Mixtral, LLAMA->MIXTRAL
+@register(backends=("torch",))
 class MixtralForSequenceClassification(MixtralPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1594,6 +1598,7 @@ class MixtralForSequenceClassification(MixtralPreTrainedModel):
         )
 
 
+@register(backends=("torch",))
 @add_start_docstrings(
     """
     The Mixtral Model transformer with a token classification head on top (a linear layer on top of the hidden-states
@@ -1638,7 +1643,7 @@ class MixtralForTokenClassification(MixtralPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+    ) -> Union[Tuple, TokenClassifierOutput]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
             Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
@@ -1677,3 +1682,12 @@ class MixtralForTokenClassification(MixtralPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "MixtralPreTrainedModel",
+    "MixtralModel",
+    "MixtralForCausalLM",
+    "MixtralForSequenceClassification",
+    "MixtralForTokenClassification",
+]

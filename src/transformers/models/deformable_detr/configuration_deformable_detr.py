@@ -17,12 +17,14 @@
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
 from ...utils.backbone_utils import verify_backbone_config_arguments
+from ...utils.import_utils import register
 from ..auto import CONFIG_MAPPING
 
 
 logger = logging.get_logger(__name__)
 
 
+@register()
 class DeformableDetrConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`DeformableDetrModel`]. It is used to instantiate
@@ -277,3 +279,6 @@ class DeformableDetrConfig(PretrainedConfig):
     @property
     def hidden_size(self) -> int:
         return self.d_model
+
+
+__all__ = ["DeformableDetrConfig"]

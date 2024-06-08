@@ -22,8 +22,10 @@
 
 
 from transformers import PretrainedConfig
+from transformers.utils.import_utils import register
 
 
+@register()
 class GemmaConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`GemmaModel`]. It is used to instantiate an Gemma
@@ -143,3 +145,6 @@ class GemmaConfig(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
+
+
+__all__ = ["GemmaConfig"]

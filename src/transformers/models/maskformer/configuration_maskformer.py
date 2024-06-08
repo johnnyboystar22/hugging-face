@@ -19,6 +19,7 @@ from typing import Dict, Optional
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
 from ...utils.backbone_utils import verify_backbone_config_arguments
+from ...utils.import_utils import register
 from ..auto import CONFIG_MAPPING
 from ..detr import DetrConfig
 from ..swin import SwinConfig
@@ -27,6 +28,7 @@ from ..swin import SwinConfig
 logger = logging.get_logger(__name__)
 
 
+@register()
 class MaskFormerConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`MaskFormerModel`]. It is used to instantiate a
@@ -221,3 +223,6 @@ class MaskFormerConfig(PretrainedConfig):
             decoder_config=decoder_config,
             **kwargs,
         )
+
+
+__all__ = ["MaskFormerConfig"]

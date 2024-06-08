@@ -20,11 +20,11 @@ from typing import List, Optional, Union
 
 import numpy as np
 
-from ... import is_torch_available
 from ...audio_utils import mel_filter_bank, spectrogram, window_function
 from ...feature_extraction_sequence_utils import SequenceFeatureExtractor
 from ...feature_extraction_utils import BatchFeature
 from ...utils import TensorType, logging
+from ...utils.import_utils import is_torch_available, register
 
 
 if is_torch_available():
@@ -33,6 +33,7 @@ if is_torch_available():
 logger = logging.get_logger(__name__)
 
 
+@register()
 class WhisperFeatureExtractor(SequenceFeatureExtractor):
     r"""
     Constructs a Whisper feature extractor.
@@ -322,3 +323,6 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             padded_inputs = padded_inputs.convert_to_tensors(return_tensors)
 
         return padded_inputs
+
+
+__all__ = ["WhisperFeatureExtractor"]

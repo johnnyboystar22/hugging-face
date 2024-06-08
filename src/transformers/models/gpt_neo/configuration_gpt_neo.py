@@ -17,15 +17,17 @@
 from collections import OrderedDict
 from typing import Any, Mapping, Optional
 
-from ... import PreTrainedTokenizer, TensorType, is_torch_available
 from ...configuration_utils import PretrainedConfig
 from ...onnx import OnnxConfigWithPast
+from ...tokenization_utils import PreTrainedTokenizer, TensorType
 from ...utils import logging
+from ...utils.import_utils import is_torch_available, register
 
 
 logger = logging.get_logger(__name__)
 
 
+@register()
 class GPTNeoConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`GPTNeoModel`]. It is used to instantiate a GPT
@@ -204,6 +206,7 @@ def custom_get_block_length_and_num_blocks(seq_length, window_size):
     return largest_divisor, torch.div(seq_length, largest_divisor, rounding_mode="floor")
 
 
+@register()
 class GPTNeoOnnxConfig(OnnxConfigWithPast):
     @property
     def inputs(self) -> Mapping[str, Mapping[int, str]]:
@@ -267,3 +270,6 @@ class GPTNeoOnnxConfig(OnnxConfigWithPast):
     @property
     def default_onnx_opset(self) -> int:
         return 13
+
+
+__all__ = ["GPTNeoConfig", "GPTNeoOnnxConfig"]

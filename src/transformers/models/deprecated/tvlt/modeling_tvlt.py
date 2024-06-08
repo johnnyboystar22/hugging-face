@@ -36,6 +36,7 @@ from ....utils import (
     logging,
     replace_return_docstrings,
 )
+from ....utils.import_utils import register
 from .configuration_tvlt import TvltConfig
 
 
@@ -574,6 +575,7 @@ class TvltEncoder(nn.Module):
         )
 
 
+@register(backends=("torch",))
 class TvltPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -658,6 +660,7 @@ TVLT_INPUTS_DOCSTRING = r"""
     "The bare TVLT Model transformer outputting raw hidden-states without any specific head on top.",
     TVLT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class TvltModel(TvltPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -883,6 +886,7 @@ class TvltDecoder(nn.Module):
     "The TVLT Model transformer with the decoder on top for self-supervised pre-training.",
     TVLT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class TvltForPreTraining(TvltPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1199,6 +1203,7 @@ class TvltMAEHead(nn.Module):
     """,
     TVLT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class TvltForAudioVisualClassification(TvltPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1286,3 +1291,6 @@ class TvltForAudioVisualClassification(TvltPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = ["TvltPreTrainedModel", "TvltModel", "TvltForPreTraining", "TvltForAudioVisualClassification"]

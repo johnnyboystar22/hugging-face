@@ -29,6 +29,7 @@ from ....modeling_utils import PreTrainedModel
 from ....pytorch_utils import find_pruneable_heads_and_indices, prune_linear_layer
 from ....utils import add_code_sample_docstrings, add_start_docstrings, add_start_docstrings_to_model_forward, logging
 from ....utils.backbone_utils import load_backbone
+from ....utils.import_utils import register
 from .configuration_vit_hybrid import ViTHybridConfig
 
 
@@ -470,6 +471,7 @@ class ViTHybridEncoder(nn.Module):
         )
 
 
+@register(backends=("torch",))
 class ViTHybridPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -548,6 +550,7 @@ VIT_INPUTS_DOCSTRING = r"""
     "The bare ViT Hybrid Model transformer outputting raw hidden-states without any specific head on top.",
     VIT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class ViTHybridModel(ViTHybridPreTrainedModel):
     def __init__(self, config: ViTHybridConfig, add_pooling_layer: bool = True, use_mask_token: bool = False):
         super().__init__(config)
@@ -665,6 +668,7 @@ class ViTHybridPooler(nn.Module):
     """,
     VIT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class ViTHybridForImageClassification(ViTHybridPreTrainedModel):
     def __init__(self, config: ViTHybridConfig) -> None:
         super().__init__(config)
@@ -751,3 +755,6 @@ class ViTHybridForImageClassification(ViTHybridPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = ["ViTHybridPreTrainedModel", "ViTHybridModel", "ViTHybridForImageClassification"]

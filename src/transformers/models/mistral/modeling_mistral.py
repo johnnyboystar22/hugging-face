@@ -47,6 +47,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_mistral import MistralConfig
 
 
@@ -759,6 +760,7 @@ MISTRAL_START_DOCSTRING = r"""
     "The bare Mistral Model outputting raw hidden-states without any specific head on top.",
     MISTRAL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class MistralPreTrainedModel(PreTrainedModel):
     config_class = MistralConfig
     base_model_prefix = "model"
@@ -856,6 +858,7 @@ MISTRAL_INPUTS_DOCSTRING = r"""
     "The bare Mistral Model outputting raw hidden-states without any specific head on top.",
     MISTRAL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class MistralModel(MistralPreTrainedModel):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`MistralDecoderLayer`]
@@ -1109,6 +1112,7 @@ class MistralModel(MistralPreTrainedModel):
         return causal_mask
 
 
+@register(backends=("torch",))
 class MistralForCausalLM(MistralPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1338,6 +1342,7 @@ class MistralForCausalLM(MistralPreTrainedModel):
     MISTRAL_START_DOCSTRING,
 )
 # Copied from transformers.models.llama.modeling_llama.LlamaForSequenceClassification with Llama->Mistral, LLAMA->MISTRAL
+@register(backends=("torch",))
 class MistralForSequenceClassification(MistralPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1446,6 +1451,7 @@ class MistralForSequenceClassification(MistralPreTrainedModel):
         )
 
 
+@register(backends=("torch",))
 @add_start_docstrings(
     """
     The Mistral Model transformer with a token classification head on top (a linear layer on top of the hidden-states
@@ -1490,7 +1496,7 @@ class MistralForTokenClassification(MistralPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+    ) -> Union[Tuple, TokenClassifierOutput]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
             Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
@@ -1529,3 +1535,12 @@ class MistralForTokenClassification(MistralPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "MistralPreTrainedModel",
+    "MistralModel",
+    "MistralForCausalLM",
+    "MistralForSequenceClassification",
+    "MistralForTokenClassification",
+]

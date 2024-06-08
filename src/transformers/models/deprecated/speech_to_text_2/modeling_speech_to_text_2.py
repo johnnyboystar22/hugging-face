@@ -27,6 +27,7 @@ from ....modeling_attn_mask_utils import _prepare_4d_attention_mask, _prepare_4d
 from ....modeling_outputs import BaseModelOutputWithPastAndCrossAttentions, CausalLMOutputWithCrossAttentions
 from ....modeling_utils import PreTrainedModel
 from ....utils import add_start_docstrings, logging, replace_return_docstrings
+from ....utils.import_utils import register
 from .configuration_speech_to_text_2 import Speech2Text2Config
 
 
@@ -384,6 +385,7 @@ class Speech2Text2DecoderLayer(nn.Module):
         return outputs
 
 
+@register(backends=("torch",))
 class Speech2Text2PreTrainedModel(PreTrainedModel):
     config_class = Speech2Text2Config
     base_model_prefix = "model"
@@ -687,6 +689,7 @@ class Speech2Text2DecoderWrapper(Speech2Text2PreTrainedModel):
     " [`EncoderDecoderModel`] and [`SpeechEncoderDecoder`].",
     SPEECH_TO_TEXT_2_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class Speech2Text2ForCausalLM(Speech2Text2PreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -921,3 +924,6 @@ class Speech2Text2ForCausalLM(Speech2Text2PreTrainedModel):
                 tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past),
             )
         return reordered_past
+
+
+__all__ = ["Speech2Text2PreTrainedModel", "Speech2Text2ForCausalLM"]

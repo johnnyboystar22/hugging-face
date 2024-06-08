@@ -35,6 +35,7 @@ from ...modeling_tf_utils import (
 )
 from ...tf_utils import check_embeddings_within_bounds, shape_list, stable_softmax
 from ...utils import add_code_sample_docstrings, add_start_docstrings, add_start_docstrings_to_model_forward, logging
+from ...utils.import_utils import register
 from .configuration_ctrl import CTRLConfig
 
 
@@ -248,6 +249,7 @@ class TFEncoderLayer(keras.layers.Layer):
 
 
 @keras_serializable
+@register(backends=("tf",))
 class TFCTRLMainLayer(keras.layers.Layer):
     config_class = CTRLConfig
 
@@ -456,6 +458,7 @@ class TFCTRLMainLayer(keras.layers.Layer):
                     layer.build(None)
 
 
+@register(backends=("tf",))
 class TFCTRLPreTrainedModel(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -579,6 +582,7 @@ CTRL_INPUTS_DOCSTRING = r"""
     "The bare CTRL Model transformer outputting raw hidden-states without any specific head on top.",
     CTRL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFCTRLModel(TFCTRLPreTrainedModel):
     def __init__(self, config, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -660,6 +664,7 @@ class TFCTRLBiasLayer(keras.layers.Layer):
     """,
     CTRL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFCTRLLMHeadModel(TFCTRLPreTrainedModel, TFCausalLanguageModelingLoss):
     def __init__(self, config, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -804,6 +809,7 @@ class TFCTRLLMHeadModel(TFCTRLPreTrainedModel, TFCausalLanguageModelingLoss):
     """,
     CTRL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFCTRLForSequenceClassification(TFCTRLPreTrainedModel, TFSequenceClassificationLoss):
     def __init__(self, config, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -926,3 +932,12 @@ class TFCTRLForSequenceClassification(TFCTRLPreTrainedModel, TFSequenceClassific
         if getattr(self, "transformer", None) is not None:
             with tf.name_scope(self.transformer.name):
                 self.transformer.build(None)
+
+
+__all__ = [
+    "TFCTRLPreTrainedModel",
+    "TFCTRLModel",
+    "TFCTRLLMHeadModel",
+    "TFCTRLForSequenceClassification",
+    "TFCTRLMainLayer",
+]
