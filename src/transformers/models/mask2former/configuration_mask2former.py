@@ -19,12 +19,14 @@ from typing import Dict, List, Optional
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
 from ...utils.backbone_utils import verify_backbone_config_arguments
+from ...utils.import_utils import register
 from ..auto import CONFIG_MAPPING
 
 
 logger = logging.get_logger(__name__)
 
 
+@register()
 class Mask2FormerConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Mask2FormerModel`]. It is used to instantiate a
@@ -251,3 +253,6 @@ class Mask2FormerConfig(PretrainedConfig):
             backbone_config=backbone_config,
             **kwargs,
         )
+
+
+__all__ = ["Mask2FormerConfig"]

@@ -40,6 +40,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_cvt import CvtConfig
 
 
@@ -807,6 +808,7 @@ class TFCvtEncoder(keras.layers.Layer):
 
 
 @keras_serializable
+@register(backends=("tf",))
 class TFCvtMainLayer(keras.layers.Layer):
     """Construct the Cvt model."""
 
@@ -855,6 +857,7 @@ class TFCvtMainLayer(keras.layers.Layer):
                 self.encoder.build(None)
 
 
+@register(backends=("tf",))
 class TFCvtPreTrainedModel(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -917,6 +920,7 @@ TFCVT_INPUTS_DOCSTRING = r"""
     "The bare Cvt Model transformer outputting raw hidden-states without any specific head on top.",
     TFCVT_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFCvtModel(TFCvtPreTrainedModel):
     def __init__(self, config: CvtConfig, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -989,6 +993,7 @@ class TFCvtModel(TFCvtPreTrainedModel):
     """,
     TFCVT_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFCvtForImageClassification(TFCvtPreTrainedModel, TFSequenceClassificationLoss):
     def __init__(self, config: CvtConfig, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -1091,3 +1096,6 @@ class TFCvtForImageClassification(TFCvtPreTrainedModel, TFSequenceClassification
             if hasattr(self.classifier, "name"):
                 with tf.name_scope(self.classifier.name):
                     self.classifier.build([None, None, self.config.embed_dim[-1]])
+
+
+__all__ = ["TFCvtPreTrainedModel", "TFCvtModel", "TFCvtForImageClassification", "TFCvtMainLayer"]

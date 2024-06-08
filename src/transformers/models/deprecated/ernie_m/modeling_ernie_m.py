@@ -34,6 +34,7 @@ from ....modeling_outputs import (
 from ....modeling_utils import PreTrainedModel
 from ....pytorch_utils import find_pruneable_heads_and_indices, prune_linear_layer
 from ....utils import add_code_sample_docstrings, add_start_docstrings, add_start_docstrings_to_model_forward, logging
+from ....utils.import_utils import register
 from .configuration_ernie_m import ErnieMConfig
 
 
@@ -394,6 +395,7 @@ class ErnieMPooler(nn.Module):
         return pooled_output
 
 
+@register(backends=("torch",))
 class ErnieMPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -482,6 +484,7 @@ ERNIE_M_INPUTS_DOCSTRING = r"""
     "The bare ErnieM Model transformer outputting raw hidden-states without any specific head on top.",
     ERNIE_M_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class ErnieMModel(ErnieMPreTrainedModel):
     def __init__(self, config, add_pooling_layer=True):
         super(ErnieMModel, self).__init__(config)
@@ -596,6 +599,7 @@ class ErnieMModel(ErnieMPreTrainedModel):
     the pooled output) e.g. for GLUE tasks.""",
     ERNIE_M_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class ErnieMForSequenceClassification(ErnieMPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -697,6 +701,7 @@ class ErnieMForSequenceClassification(ErnieMPreTrainedModel):
     the pooled output and a softmax) e.g. for RocStories/SWAG tasks.""",
     ERNIE_M_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class ErnieMForMultipleChoice(ErnieMPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -786,6 +791,7 @@ class ErnieMForMultipleChoice(ErnieMPreTrainedModel):
     the hidden-states output) e.g. for Named-Entity-Recognition (NER) tasks.""",
     ERNIE_M_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class ErnieMForTokenClassification(ErnieMPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -866,6 +872,7 @@ class ErnieMForTokenClassification(ErnieMPreTrainedModel):
     layers on top of the hidden-states output to compute `span start logits` and `span end logits`).""",
     ERNIE_M_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class ErnieMForQuestionAnswering(ErnieMPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -962,6 +969,8 @@ class ErnieMForQuestionAnswering(ErnieMPreTrainedModel):
     compute `start_prob` and `end_prob`, designed for Universal Information Extraction.""",
     ERNIE_M_START_DOCSTRING,
 )
+# Copied from paddlenlp.transformers.ernie_m.modeling.UIEM
+@register(backends=("torch",))
 class ErnieMForInformationExtraction(ErnieMPreTrainedModel):
     def __init__(self, config):
         super(ErnieMForInformationExtraction, self).__init__(config)
@@ -1045,3 +1054,14 @@ class ErnieMForInformationExtraction(ErnieMPreTrainedModel):
             hidden_states=result.hidden_states,
             attentions=result.attentions,
         )
+
+
+__all__ = [
+    "ErnieMPreTrainedModel",
+    "ErnieMModel",
+    "ErnieMForSequenceClassification",
+    "ErnieMForMultipleChoice",
+    "ErnieMForTokenClassification",
+    "ErnieMForQuestionAnswering",
+    "ErnieMForInformationExtraction",
+]

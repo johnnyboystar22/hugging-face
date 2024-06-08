@@ -42,6 +42,7 @@ from ....utils import (
     add_start_docstrings_to_model_forward,
     logging,
 )
+from ...utils.import_utils import register
 from .configuration_efficientformer import EfficientFormerConfig
 
 
@@ -813,6 +814,7 @@ class TFEfficientFormerEncoder(keras.layers.Layer):
 
 
 @keras_serializable
+@register(backends=("tf",))
 class TFEfficientFormerMainLayer(keras.layers.Layer):
     config_class = EfficientFormerConfig
 
@@ -896,6 +898,7 @@ class TFEfficientFormerMainLayer(keras.layers.Layer):
                 self.layernorm.build([None, None, self.config.hidden_sizes[-1]])
 
 
+@register(backends=("tf",))
 class TFEfficientFormerPreTrainedModel(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -939,6 +942,7 @@ EFFICIENTFORMER_INPUTS_DOCSTRING = r"""
     "The bare EfficientFormer Model transformer outputting raw hidden-states without any specific head on top.",
     EFFICIENTFORMER_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFEfficientFormerModel(TFEfficientFormerPreTrainedModel):
     def __init__(self, config: EfficientFormerConfig, **kwargs) -> None:
         super().__init__(config, **kwargs)
@@ -987,6 +991,7 @@ class TFEfficientFormerModel(TFEfficientFormerPreTrainedModel):
     """,
     EFFICIENTFORMER_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFEfficientFormerForImageClassification(TFEfficientFormerPreTrainedModel, TFSequenceClassificationLoss):
     def __init__(self, config: EfficientFormerConfig):
         super().__init__(config)
@@ -1105,6 +1110,7 @@ class TFEfficientFormerForImageClassificationWithTeacherOutput(ModelOutput):
     """,
     EFFICIENTFORMER_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFEfficientFormerForImageClassificationWithTeacher(TFEfficientFormerPreTrainedModel):
     def __init__(self, config: EfficientFormerConfig) -> None:
         super().__init__(config)
@@ -1188,3 +1194,12 @@ class TFEfficientFormerForImageClassificationWithTeacher(TFEfficientFormerPreTra
             if hasattr(self.distillation_classifier, "name"):
                 with tf.name_scope(self.distillation_classifier.name):
                     self.distillation_classifier.build([None, None, self.config.hidden_sizes[-1]])
+
+
+__all__ = [
+    "TFEfficientFormerPreTrainedModel",
+    "TFEfficientFormerModel",
+    "TFEfficientFormerForImageClassification",
+    "TFEfficientFormerForImageClassificationWithTeacher",
+    "TFEfficientFormerMainLayer",
+]

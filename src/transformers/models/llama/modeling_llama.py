@@ -46,6 +46,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_llama import LlamaConfig
 
 
@@ -756,6 +757,7 @@ LLAMA_START_DOCSTRING = r"""
     "The bare LLaMA Model outputting raw hidden-states without any specific head on top.",
     LLAMA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class LlamaPreTrainedModel(PreTrainedModel):
     config_class = LlamaConfig
     base_model_prefix = "model"
@@ -858,6 +860,7 @@ LLAMA_INPUTS_DOCSTRING = r"""
     "The bare LLaMA Model outputting raw hidden-states without any specific head on top.",
     LLAMA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class LlamaModel(LlamaPreTrainedModel):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`LlamaDecoderLayer`]
@@ -1081,6 +1084,7 @@ class LlamaModel(LlamaPreTrainedModel):
         return causal_mask
 
 
+@register(backends=("torch",))
 class LlamaForCausalLM(LlamaPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1305,6 +1309,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
     """,
     LLAMA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class LlamaForSequenceClassification(LlamaPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1420,6 +1425,7 @@ SQuAD (a linear layer on top of the hidden-states output to compute `span start 
     """,
     LLAMA_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class LlamaForQuestionAnswering(LlamaPreTrainedModel):
     base_model_prefix = "transformer"
 
@@ -1512,6 +1518,7 @@ class LlamaForQuestionAnswering(LlamaPreTrainedModel):
         )
 
 
+@register(backends=("torch",))
 @add_start_docstrings(
     """
     The Llama Model transformer with a token classification head on top (a linear layer on top of the hidden-states
@@ -1594,3 +1601,13 @@ class LlamaForTokenClassification(LlamaPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "LlamaPreTrainedModel",
+    "LlamaModel",
+    "LlamaForCausalLM",
+    "LlamaForSequenceClassification",
+    "LlamaForQuestionAnswering",
+    "LlamaForTokenClassification",
+]

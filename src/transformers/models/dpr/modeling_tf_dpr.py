@@ -31,6 +31,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from ..bert.modeling_tf_bert import TFBertMainLayer
 from .configuration_dpr import DPRConfig
 
@@ -355,6 +356,7 @@ class TFDPREncoder(TFPreTrainedModel):
 ##################
 
 
+@register(backends=("tf",))
 class TFDPRPretrainedContextEncoder(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -365,6 +367,7 @@ class TFDPRPretrainedContextEncoder(TFPreTrainedModel):
     base_model_prefix = "ctx_encoder"
 
 
+@register(backends=("tf",))
 class TFDPRPretrainedQuestionEncoder(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -375,6 +378,7 @@ class TFDPRPretrainedQuestionEncoder(TFPreTrainedModel):
     base_model_prefix = "question_encoder"
 
 
+@register(backends=("tf",))
 class TFDPRPretrainedReader(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -535,6 +539,7 @@ TF_DPR_READER_INPUTS_DOCSTRING = r"""
     "The bare DPRContextEncoder transformer outputting pooler outputs as context representations.",
     TF_DPR_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFDPRContextEncoder(TFDPRPretrainedContextEncoder):
     def __init__(self, config: DPRConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
@@ -624,6 +629,7 @@ class TFDPRContextEncoder(TFDPRPretrainedContextEncoder):
     "The bare DPRQuestionEncoder transformer outputting pooler outputs as question representations.",
     TF_DPR_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFDPRQuestionEncoder(TFDPRPretrainedQuestionEncoder):
     def __init__(self, config: DPRConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
@@ -712,6 +718,7 @@ class TFDPRQuestionEncoder(TFDPRPretrainedQuestionEncoder):
     "The bare DPRReader transformer outputting span predictions.",
     TF_DPR_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFDPRReader(TFDPRPretrainedReader):
     def __init__(self, config: DPRConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
@@ -788,3 +795,13 @@ class TFDPRReader(TFDPRPretrainedReader):
         if getattr(self, "span_predictor", None) is not None:
             with tf.name_scope(self.span_predictor.name):
                 self.span_predictor.build(None)
+
+
+__all__ = [
+    "TFDPRPretrainedContextEncoder",
+    "TFDPRPretrainedQuestionEncoder",
+    "TFDPRPretrainedReader",
+    "TFDPRContextEncoder",
+    "TFDPRQuestionEncoder",
+    "TFDPRReader",
+]

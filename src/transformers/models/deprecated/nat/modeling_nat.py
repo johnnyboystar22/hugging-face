@@ -39,6 +39,7 @@ from ....utils import (
     requires_backends,
 )
 from ....utils.backbone_utils import BackboneMixin
+from ....utils.import_utils import register
 from .configuration_nat import NatConfig
 
 
@@ -609,6 +610,7 @@ class NatEncoder(nn.Module):
         )
 
 
+@register(backends=("torch",))
 class NatPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -665,6 +667,7 @@ NAT_INPUTS_DOCSTRING = r"""
     "The bare Nat Model transformer outputting raw hidden-states without any specific head on top.",
     NAT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class NatModel(NatPreTrainedModel):
     def __init__(self, config, add_pooling_layer=True):
         super().__init__(config)
@@ -757,6 +760,7 @@ class NatModel(NatPreTrainedModel):
     """,
     NAT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class NatForImageClassification(NatPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -848,6 +852,7 @@ class NatForImageClassification(NatPreTrainedModel):
     "NAT backbone, to be used with frameworks like DETR and MaskFormer.",
     NAT_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class NatBackbone(NatPreTrainedModel, BackboneMixin):
     def __init__(self, config):
         super().__init__(config)
@@ -948,3 +953,6 @@ class NatBackbone(NatPreTrainedModel, BackboneMixin):
             hidden_states=outputs.hidden_states if output_hidden_states else None,
             attentions=outputs.attentions,
         )
+
+
+__all__ = ["NatPreTrainedModel", "NatModel", "NatForImageClassification", "NatBackbone"]

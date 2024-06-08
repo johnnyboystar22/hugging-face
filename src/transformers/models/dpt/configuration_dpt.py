@@ -19,6 +19,7 @@ import copy
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
 from ...utils.backbone_utils import verify_backbone_config_arguments
+from ...utils.import_utils import register
 from ..auto.configuration_auto import CONFIG_MAPPING
 from ..bit import BitConfig
 
@@ -26,6 +27,7 @@ from ..bit import BitConfig
 logger = logging.get_logger(__name__)
 
 
+@register()
 class DPTConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`DPTModel`]. It is used to instantiate an DPT
@@ -281,3 +283,6 @@ class DPTConfig(PretrainedConfig):
 
         output["model_type"] = self.__class__.model_type
         return output
+
+
+__all__ = ["DPTConfig"]

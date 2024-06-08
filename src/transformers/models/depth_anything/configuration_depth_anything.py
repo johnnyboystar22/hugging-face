@@ -19,12 +19,14 @@ import copy
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
 from ...utils.backbone_utils import verify_backbone_config_arguments
+from ...utils.import_utils import register
 from ..auto.configuration_auto import CONFIG_MAPPING
 
 
 logger = logging.get_logger(__name__)
 
 
+@register()
 class DepthAnythingConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`DepthAnythingModel`]. It is used to instantiate an DepthAnything
@@ -152,3 +154,6 @@ class DepthAnythingConfig(PretrainedConfig):
 
         output["model_type"] = self.__class__.model_type
         return output
+
+
+__all__ = ["DepthAnythingConfig"]

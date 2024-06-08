@@ -38,6 +38,7 @@ from ...utils import (
     requires_backends,
 )
 from ...utils.backbone_utils import load_backbone
+from ...utils.import_utils import register
 from .configuration_detr import DetrConfig
 
 
@@ -801,6 +802,7 @@ class DetrDecoderLayer(nn.Module):
         return outputs
 
 
+@register(backends=("torch",))
 class DetrPreTrainedModel(PreTrainedModel):
     config_class = DetrConfig
     base_model_prefix = "model"
@@ -1182,6 +1184,7 @@ class DetrDecoder(DetrPreTrainedModel):
     """,
     DETR_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class DetrModel(DetrPreTrainedModel):
     def __init__(self, config: DetrConfig):
         super().__init__(config)
@@ -1350,6 +1353,7 @@ class DetrModel(DetrPreTrainedModel):
     """,
     DETR_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class DetrForObjectDetection(DetrPreTrainedModel):
     def __init__(self, config: DetrConfig):
         super().__init__(config)
@@ -1524,6 +1528,7 @@ class DetrForObjectDetection(DetrPreTrainedModel):
     """,
     DETR_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class DetrForSegmentation(DetrPreTrainedModel):
     def __init__(self, config: DetrConfig):
         super().__init__(config)
@@ -2328,3 +2333,6 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
     else:
         raise ValueError("Only 3-dimensional tensors are supported")
     return NestedTensor(tensor, mask)
+
+
+__all__ = ["DetrPreTrainedModel", "DetrModel", "DetrForObjectDetection", "DetrForSegmentation"]

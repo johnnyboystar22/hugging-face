@@ -47,6 +47,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_deit import DeiTConfig
 
 
@@ -591,6 +592,7 @@ class TFDeiTEncoder(keras.layers.Layer):
 
 
 @keras_serializable
+@register(backends=("tf",))
 class TFDeiTMainLayer(keras.layers.Layer):
     config_class = DeiTConfig
 
@@ -705,6 +707,7 @@ class TFDeiTMainLayer(keras.layers.Layer):
 
 
 # Copied from transformers.models.vit.modeling_tf_vit.TFViTPreTrainedModel with ViT->DeiT all-casing
+@register(backends=("tf",))
 class TFDeiTPreTrainedModel(TFPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -756,6 +759,7 @@ DEIT_INPUTS_DOCSTRING = r"""
     "The bare DeiT Model transformer outputting raw hidden-states without any specific head on top.",
     DEIT_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFDeiTModel(TFDeiTPreTrainedModel):
     def __init__(
         self, config: DeiTConfig, add_pooling_layer: bool = True, use_mask_token: bool = False, **kwargs
@@ -895,6 +899,7 @@ class TFDeitDecoder(keras.layers.Layer):
     " [SimMIM](https://arxiv.org/abs/2111.09886).",
     DEIT_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFDeiTForMaskedImageModeling(TFDeiTPreTrainedModel):
     def __init__(self, config: DeiTConfig) -> None:
         super().__init__(config)
@@ -1023,6 +1028,7 @@ class TFDeiTForMaskedImageModeling(TFDeiTPreTrainedModel):
     """,
     DEIT_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFDeiTForImageClassification(TFDeiTPreTrainedModel, TFSequenceClassificationLoss):
     def __init__(self, config: DeiTConfig):
         super().__init__(config)
@@ -1139,6 +1145,7 @@ class TFDeiTForImageClassification(TFDeiTPreTrainedModel, TFSequenceClassificati
     """,
     DEIT_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFDeiTForImageClassificationWithTeacher(TFDeiTPreTrainedModel):
     def __init__(self, config: DeiTConfig) -> None:
         super().__init__(config)
@@ -1222,3 +1229,13 @@ class TFDeiTForImageClassificationWithTeacher(TFDeiTPreTrainedModel):
         if getattr(self, "distillation_classifier", None) is not None:
             with tf.name_scope(self.distillation_classifier.name):
                 self.distillation_classifier.build([None, None, self.config.hidden_size])
+
+
+__all__ = [
+    "TFDeiTPreTrainedModel",
+    "TFDeiTModel",
+    "TFDeiTForMaskedImageModeling",
+    "TFDeiTForImageClassification",
+    "TFDeiTForImageClassificationWithTeacher",
+    "TFDeiTMainLayer",
+]

@@ -35,6 +35,7 @@ from ...modeling_outputs import (
 )
 from ...modeling_utils import PreTrainedModel
 from ...utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging, replace_return_docstrings
+from ...utils.import_utils import register
 from .configuration_speecht5 import SpeechT5Config, SpeechT5HifiGanConfig
 
 
@@ -1198,6 +1199,7 @@ class SpeechT5DecoderLayer(nn.Module):
         return outputs
 
 
+@register(backends=("torch",))
 class SpeechT5PreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -2089,6 +2091,7 @@ SPEECHT5_INPUTS_DOCSTRING = r"""
     "The bare SpeechT5 Encoder-Decoder Model outputting raw hidden-states without any specific pre- or post-nets.",
     SPEECHT5_BASE_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class SpeechT5Model(SpeechT5PreTrainedModel):
     def __init__(
         self,
@@ -2237,6 +2240,7 @@ class SpeechT5Model(SpeechT5PreTrainedModel):
     """SpeechT5 Model with a speech encoder and a text decoder.""",
     SPEECHT5_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class SpeechT5ForSpeechToText(SpeechT5PreTrainedModel):
     _tied_weights_keys = ["text_decoder_postnet.lm_head.weight"]
 
@@ -2601,6 +2605,7 @@ def _generate_speech(
     """SpeechT5 Model with a text encoder and a speech decoder.""",
     SPEECHT5_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class SpeechT5ForTextToSpeech(SpeechT5PreTrainedModel):
     main_input_name = "input_ids"
 
@@ -2943,6 +2948,7 @@ class SpeechT5ForTextToSpeech(SpeechT5PreTrainedModel):
     """SpeechT5 Model with a speech encoder and a speech decoder.""",
     SPEECHT5_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class SpeechT5ForSpeechToSpeech(SpeechT5PreTrainedModel):
     def __init__(self, config: SpeechT5Config):
         super().__init__(config)
@@ -3252,6 +3258,7 @@ class HifiGanResidualBlock(nn.Module):
     """HiFi-GAN vocoder.""",
     HIFIGAN_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class SpeechT5HifiGan(PreTrainedModel):
     config_class = SpeechT5HifiGanConfig
     main_input_name = "spectrogram"
@@ -3363,3 +3370,13 @@ class SpeechT5HifiGan(PreTrainedModel):
             waveform = hidden_states.squeeze(1)
 
         return waveform
+
+
+__all__ = [
+    "SpeechT5PreTrainedModel",
+    "SpeechT5Model",
+    "SpeechT5ForSpeechToText",
+    "SpeechT5ForTextToSpeech",
+    "SpeechT5ForSpeechToSpeech",
+    "SpeechT5HifiGan",
+]

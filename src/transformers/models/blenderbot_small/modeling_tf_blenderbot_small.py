@@ -47,6 +47,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_blenderbot_small import BlenderbotSmallConfig
 
 
@@ -523,6 +524,7 @@ class TFBlenderbotSmallDecoderLayer(keras.layers.Layer):
                 self.final_layer_norm.build([None, None, self.embed_dim])
 
 
+@register(backends=("tf",))
 class TFBlenderbotSmallPreTrainedModel(TFPreTrainedModel):
     config_class = BlenderbotSmallConfig
     base_model_prefix = "model"
@@ -1091,6 +1093,7 @@ class TFBlenderbotSmallDecoder(keras.layers.Layer):
 
 
 @keras_serializable
+@register(backends=("tf",))
 class TFBlenderbotSmallMainLayer(keras.layers.Layer):
     config_class = BlenderbotSmallConfig
 
@@ -1218,6 +1221,7 @@ class TFBlenderbotSmallMainLayer(keras.layers.Layer):
     "The bare BLENDERBOT_SMALL Model outputting raw hidden-states without any specific head on top.",
     BLENDERBOT_SMALL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFBlenderbotSmallModel(TFBlenderbotSmallPreTrainedModel):
     def __init__(self, config: BlenderbotSmallConfig, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -1331,6 +1335,7 @@ class BiasLayer(keras.layers.Layer):
     "The BLENDERBOT_SMALL Model with a language modeling head. Can be used for summarization.",
     BLENDERBOT_SMALL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFBlenderbotSmallForConditionalGeneration(TFBlenderbotSmallPreTrainedModel, TFCausalLanguageModelingLoss):
     _keys_to_ignore_on_load_unexpected = [
         r"model.encoder.embed_tokens.weight",
@@ -1523,3 +1528,11 @@ class TFBlenderbotSmallForConditionalGeneration(TFBlenderbotSmallPreTrainedModel
         if getattr(self, "bias_layer", None) is not None:
             with tf.name_scope(self.bias_layer.name):
                 self.bias_layer.build(None)
+
+
+__all__ = [
+    "TFBlenderbotSmallPreTrainedModel",
+    "TFBlenderbotSmallModel",
+    "TFBlenderbotSmallForConditionalGeneration",
+    "TFBlenderbotSmallMainLayer",
+]

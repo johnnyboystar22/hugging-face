@@ -46,6 +46,7 @@ from ...utils import (
     add_start_docstrings_to_model_forward,
     logging,
 )
+from ...utils.import_utils import register
 from .configuration_mistral import MistralConfig
 
 
@@ -469,6 +470,7 @@ class TFMistralDecoderLayer(keras.layers.Layer):
 
 
 @keras_serializable
+@register(backends=("tf",))
 class TFMistralMainLayer(keras.layers.Layer):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`MistralDecoderLayer`]
@@ -683,6 +685,7 @@ MISTRAL_START_DOCSTRING = r"""
     "The bare Mistral Model outputting raw hidden-states without any specific head on top.",
     MISTRAL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFMistralPreTrainedModel(TFPreTrainedModel):
     config_class = MistralConfig
     base_model_prefix = "model"
@@ -762,6 +765,7 @@ MISTRAL_INPUTS_DOCSTRING = r"""
     "The bare Mistral Model outputting raw hidden-states without any specific head on top.",
     MISTRAL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFMistralModel(TFMistralPreTrainedModel):
     def __init__(self, config: MistralConfig, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -803,6 +807,7 @@ class TFMistralModel(TFMistralPreTrainedModel):
                 self.model.build(None)
 
 
+@register(backends=("tf",))
 class TFMistralForCausalLM(TFMistralPreTrainedModel, TFCausalLanguageModelingLoss):
     def __init__(self, config, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -941,6 +946,7 @@ class TFMistralForCausalLM(TFMistralPreTrainedModel, TFCausalLanguageModelingLos
     """,
     MISTRAL_START_DOCSTRING,
 )
+@register(backends=("tf",))
 class TFMistralForSequenceClassification(TFMistralPreTrainedModel, TFSequenceClassificationLoss):
     def __init__(self, config, *inputs, **kwargs):
         super().__init__(config, *inputs, **kwargs)
@@ -1053,3 +1059,12 @@ class TFMistralForSequenceClassification(TFMistralPreTrainedModel, TFSequenceCla
         if getattr(self, "score", None) is not None:
             with tf.name_scope(self.score.name):
                 self.score.build((self.config.hidden_size,))
+
+
+__all__ = [
+    "TFMistralPreTrainedModel",
+    "TFMistralModel",
+    "TFMistralMainLayer",
+    "TFMistralForCausalLM",
+    "TFMistralForSequenceClassification",
+]

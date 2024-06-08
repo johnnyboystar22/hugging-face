@@ -42,6 +42,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_xlm_roberta_xl import XLMRobertaXLConfig
 
 
@@ -564,6 +565,7 @@ class XLMRobertaXLPooler(nn.Module):
         return pooled_output
 
 
+@register(backends=("torch",))
 class XLMRobertaXLPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -651,6 +653,7 @@ XLM_ROBERTA_XL_INPUTS_DOCSTRING = r"""
     "The bare XLM-RoBERTa-XL Model transformer outputting raw hidden-states without any specific head on top.",
     XLM_ROBERTA_XL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class XLMRobertaXLModel(XLMRobertaXLPreTrainedModel):
     """
     The model can behave as an encoder (with only self-attention) as well as a decoder, in which case a layer of
@@ -831,6 +834,7 @@ class XLMRobertaXLModel(XLMRobertaXLPreTrainedModel):
     """XLM-RoBERTa-XL Model with a `language modeling` head on top for CLM fine-tuning.""",
     XLM_ROBERTA_XL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class XLMRobertaXLForCausalLM(XLMRobertaXLPreTrainedModel):
     _tied_weights_keys = ["lm_head.decoder.weight", "lm_head.decoder.bias"]
 
@@ -988,6 +992,7 @@ class XLMRobertaXLForCausalLM(XLMRobertaXLPreTrainedModel):
 @add_start_docstrings(
     """XLM-RoBERTa-XL Model with a `language modeling` head on top.""", XLM_ROBERTA_XL_START_DOCSTRING
 )
+@register(backends=("torch",))
 class XLMRobertaXLForMaskedLM(XLMRobertaXLPreTrainedModel):
     _tied_weights_keys = ["lm_head.decoder.weight", "lm_head.decoder.bias"]
 
@@ -1115,6 +1120,7 @@ class XLMRobertaXLLMHead(nn.Module):
     """,
     XLM_ROBERTA_XL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class XLMRobertaXLForSequenceClassification(XLMRobertaXLPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1209,6 +1215,7 @@ class XLMRobertaXLForSequenceClassification(XLMRobertaXLPreTrainedModel):
     """,
     XLM_ROBERTA_XL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class XLMRobertaXLForMultipleChoice(XLMRobertaXLPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1300,6 +1307,7 @@ class XLMRobertaXLForMultipleChoice(XLMRobertaXLPreTrainedModel):
     """,
     XLM_ROBERTA_XL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class XLMRobertaXLForTokenClassification(XLMRobertaXLPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1411,6 +1419,7 @@ class XLMRobertaXLClassificationHead(nn.Module):
     """,
     XLM_ROBERTA_XL_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class XLMRobertaXLForQuestionAnswering(XLMRobertaXLPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1517,3 +1526,15 @@ def create_position_ids_from_input_ids(input_ids, padding_idx, past_key_values_l
     mask = input_ids.ne(padding_idx).int()
     incremental_indices = (torch.cumsum(mask, dim=1).type_as(mask) + past_key_values_length) * mask
     return incremental_indices.long() + padding_idx
+
+
+__all__ = [
+    "XLMRobertaXLPreTrainedModel",
+    "XLMRobertaXLModel",
+    "XLMRobertaXLForCausalLM",
+    "XLMRobertaXLForMaskedLM",
+    "XLMRobertaXLForSequenceClassification",
+    "XLMRobertaXLForMultipleChoice",
+    "XLMRobertaXLForTokenClassification",
+    "XLMRobertaXLForQuestionAnswering",
+]

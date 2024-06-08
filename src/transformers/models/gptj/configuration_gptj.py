@@ -17,15 +17,17 @@
 from collections import OrderedDict
 from typing import Any, List, Mapping, Optional
 
-from ... import PreTrainedTokenizer, TensorType, is_torch_available
 from ...configuration_utils import PretrainedConfig
 from ...onnx import OnnxConfigWithPast, PatchingSpec
+from ...tokenization_utils import PreTrainedTokenizer, TensorType
 from ...utils import logging
+from ...utils.import_utils import is_torch_available, register
 
 
 logger = logging.get_logger(__name__)
 
 
+@register()
 class GPTJConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`GPTJModel`]. It is used to instantiate a GPT-J
@@ -135,6 +137,7 @@ class GPTJConfig(PretrainedConfig):
 
 
 # Copied from transformers.models.gpt2.configuration_gpt2.GPT2OnnxConfig
+@register()
 class GPTJOnnxConfig(OnnxConfigWithPast):
     def __init__(
         self,
@@ -214,3 +217,6 @@ class GPTJOnnxConfig(OnnxConfigWithPast):
     @property
     def default_onnx_opset(self) -> int:
         return 13
+
+
+__all__ = ["GPTJConfig", "GPTJOnnxConfig"]

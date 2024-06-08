@@ -35,6 +35,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_dbrx import DbrxConfig
 
 
@@ -932,6 +933,7 @@ DBRX_START_DOCSTRING = r"""
     "The bare DBRX Model outputting raw hidden-states without any specific head on top.",
     DBRX_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class DbrxPreTrainedModel(PreTrainedModel):
     config_class = DbrxConfig
     base_model_prefix = "transformer"
@@ -1045,6 +1047,7 @@ DBRX_INPUTS_DOCSTRING = r"""
     "The bare DBRX Model outputting raw hidden-states without any specific head on top.",
     DBRX_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class DbrxModel(DbrxPreTrainedModel):
     """Transformer decoder consisting of *config.num_hidden_layers*. Each layer is a [`DbrxBlock`] layer.
 
@@ -1288,6 +1291,7 @@ class DbrxModel(DbrxPreTrainedModel):
 
 
 @add_start_docstrings("The DBRX Model transformer for causal language modeling.", DBRX_START_DOCSTRING)
+@register(backends=("torch",))
 class DbrxForCausalLM(DbrxPreTrainedModel):
     def __init__(self, config: DbrxConfig):
         super().__init__(config)
@@ -1513,3 +1517,6 @@ class DbrxForCausalLM(DbrxPreTrainedModel):
                 tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past),
             )
         return reordered_past
+
+
+__all__ = ["DbrxPreTrainedModel", "DbrxModel", "DbrxForCausalLM"]

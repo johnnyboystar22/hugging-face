@@ -23,12 +23,14 @@ from ...configuration_utils import PretrainedConfig
 from ...onnx import OnnxConfig
 from ...utils import logging
 from ...utils.backbone_utils import verify_backbone_config_arguments
+from ...utils.import_utils import register
 from ..auto import CONFIG_MAPPING
 
 
 logger = logging.get_logger(__name__)
 
 
+@register()
 class DetrConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`DetrModel`]. It is used to instantiate a DETR
@@ -265,6 +267,7 @@ class DetrConfig(PretrainedConfig):
         return cls(backbone_config=backbone_config, **kwargs)
 
 
+@register()
 class DetrOnnxConfig(OnnxConfig):
     torch_onnx_minimum_version = version.parse("1.11")
 
@@ -284,3 +287,6 @@ class DetrOnnxConfig(OnnxConfig):
     @property
     def default_onnx_opset(self) -> int:
         return 12
+
+
+__all__ = ["DetrConfig", "DetrOnnxConfig"]

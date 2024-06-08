@@ -45,6 +45,7 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
+from ...utils.import_utils import register
 from .configuration_wav2vec2_conformer import Wav2Vec2ConformerConfig
 
 
@@ -1069,6 +1070,7 @@ class Wav2Vec2ConformerAdapterLayer(nn.Module):
         return hidden_states
 
 
+@register(backends=("torch",))
 class Wav2Vec2ConformerPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -1229,6 +1231,7 @@ WAV2VEC2_CONFORMER_INPUTS_DOCSTRING = r"""
     "The bare Wav2Vec2Conformer Model transformer outputting raw hidden-states without any specific head on top.",
     WAV2VEC2_CONFORMER_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class Wav2Vec2ConformerModel(Wav2Vec2ConformerPreTrainedModel):
     def __init__(self, config: Wav2Vec2ConformerConfig):
         super().__init__(config)
@@ -1367,6 +1370,7 @@ class Wav2Vec2ConformerModel(Wav2Vec2ConformerPreTrainedModel):
 @add_start_docstrings(
     """Wav2Vec2Conformer Model with a quantizer and `VQ` head on top.""", WAV2VEC2_CONFORMER_START_DOCSTRING
 )
+@register(backends=("torch",))
 class Wav2Vec2ConformerForPreTraining(Wav2Vec2ConformerPreTrainedModel):
     # Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForPreTraining.__init__ with Wav2Vec2->Wav2Vec2Conformer,wav2vec2->wav2vec2_conformer
     def __init__(self, config: Wav2Vec2ConformerConfig):
@@ -1587,6 +1591,7 @@ class Wav2Vec2ConformerForPreTraining(Wav2Vec2ConformerPreTrainedModel):
     """Wav2Vec2Conformer Model with a `language modeling` head on top for Connectionist Temporal Classification (CTC).""",
     WAV2VEC2_CONFORMER_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class Wav2Vec2ConformerForCTC(Wav2Vec2ConformerPreTrainedModel):
     # Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForCTC.__init__ with Wav2Vec2->Wav2Vec2Conformer,wav2vec2->wav2vec2_conformer
     def __init__(self, config, target_lang: Optional[str] = None):
@@ -1707,6 +1712,7 @@ class Wav2Vec2ConformerForCTC(Wav2Vec2ConformerPreTrainedModel):
     """,
     WAV2VEC2_CONFORMER_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class Wav2Vec2ConformerForSequenceClassification(Wav2Vec2ConformerPreTrainedModel):
     # Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForSequenceClassification.__init__ with Wav2Vec2->Wav2Vec2Conformer,wav2vec2->wav2vec2_conformer
     def __init__(self, config):
@@ -1818,6 +1824,7 @@ class Wav2Vec2ConformerForSequenceClassification(Wav2Vec2ConformerPreTrainedMode
     """,
     WAV2VEC2_CONFORMER_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class Wav2Vec2ConformerForAudioFrameClassification(Wav2Vec2ConformerPreTrainedModel):
     # Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForAudioFrameClassification.__init__ with Wav2Vec2->Wav2Vec2Conformer,wav2vec2->wav2vec2_conformer,WAV_2_VEC_2->WAV2VEC2_CONFORMER
     def __init__(self, config):
@@ -1977,6 +1984,7 @@ class TDNNLayer(nn.Module):
     """,
     WAV2VEC2_CONFORMER_START_DOCSTRING,
 )
+@register(backends=("torch",))
 class Wav2Vec2ConformerForXVector(Wav2Vec2ConformerPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -2112,3 +2120,14 @@ class Wav2Vec2ConformerForXVector(Wav2Vec2ConformerPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "Wav2Vec2ConformerPreTrainedModel",
+    "Wav2Vec2ConformerModel",
+    "Wav2Vec2ConformerForPreTraining",
+    "Wav2Vec2ConformerForCTC",
+    "Wav2Vec2ConformerForSequenceClassification",
+    "Wav2Vec2ConformerForAudioFrameClassification",
+    "Wav2Vec2ConformerForXVector",
+]
