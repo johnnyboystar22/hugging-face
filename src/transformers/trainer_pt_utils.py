@@ -184,6 +184,15 @@ def nested_numpify(tensors):
     return t.numpy()
 
 
+def nested_cpu(tensors):
+    "Move `tensors` to cpu (even if it's a nested list/tuple/dict of tensors)."
+    if isinstance(tensors, (list, tuple)):
+        return type(tensors)(nested_cpu(t) for t in tensors)
+    if isinstance(tensors, Mapping):
+        return type(tensors)({k: nested_cpu(t) for k, t in tensors.items()})
+    return tensors.cpu()
+
+
 def nested_detach(tensors):
     "Detach `tensors` (even if it's a nested list/tuple/dict of tensors)."
     if isinstance(tensors, (list, tuple)):
@@ -315,40 +324,57 @@ class EvalLoopContainer:
     def __init__(self, do_nested_concat: bool = True, padding_index: int = -100):
         self.do_nested_concat = do_nested_concat
         self.padding_index = padding_index
-        self.tensors = None
-        self.arrays = None
+        self.data = None
 
     def add(self, tensors) -> None:
-        """Add tensors to the stored objects. If `do_nested_concat=True`, the tensors will be concatenated recursively."""
-        if self.tensors is None:
-            self.tensors = tensors if self.do_nested_concat else [tensors]
-        elif self.do_nested_concat:
-            self.tensors = nested_concat(self.tensors, tensors, padding_index=self.padding_index)
+        """Add tensors to the stored objects. If `do_nested_concat=True`, the tensors will be concatenated
+        recursively, otherwise they will be stored in a list."""
+
+        # If `do_nested_concat=True` self.data will be a nested structure of tensors
+        if self.do_nested_concat:
+            if self.data is None:
+                self.data = tensors
+            else:
+                self.data = nested_concat(self.data, tensors, padding_index=self.padding_index)
+
+        # If `do_nested_concat=False` self.data will be a list of tensors
         else:
-            self.tensors.append(tensors)
+            if self.data is None:
+                self.data = [tensors]
+            else:
+                self.data.append(tensors)
 
-    def to_cpu_and_numpy(self) -> None:
-        """Move tensors in stored objects to CPU and convert them to numpy arrays."""
+    def reset(self) -> None:
+        """Reset the stored objects (inplace)."""
+        self.data = None
 
-        # Check if we have something to add, if not just return
-        if self.tensors is None:
-            return
+    def cpu(self) -> None:
+        """Move stored tensors to CPU (inplace)."""
+        if self.data is not None:
+            self.data = nested_cpu(self.data)
 
-        new_arrays = nested_numpify(self.tensors)
-        if self.arrays is None:
-            self.arrays = new_arrays
-        elif self.do_nested_concat:
-            self.arrays = nested_concat(self.arrays, new_arrays, padding_index=self.padding_index)
-        else:
-            self.arrays.extend(new_arrays)
+    def get(self, to_cpu: bool = True, to_numpy: bool = False) -> Any:
+        """Return the stored tensors objects.
 
-        # reset device tensors after adding to cpu
-        self.tensors = None
+        Args:
+            to_cpu (`bool`, *optional*, defaults to `True`):
+                Whether to move the tensors to CPU.
+            to_numpy (`bool`, *optional*, defaults to `False`):
+                Whether to convert the tensors to numpy format.
 
-    def get_arrays(self):
-        """Returns the numpified and moved to CPU stored objects."""
-        self.to_cpu_and_numpy()
-        return self.arrays
+        Returns:
+            The stored objects with torch tensors or numpy arrays. If no tensors are stored, returns `None`.
+        """
+        tensors = self.data
+        if tensors is None:
+            return None
+
+        if to_cpu:
+            tensors = nested_cpu(tensors)
+        if to_numpy:
+            tensors = nested_numpify(tensors)
+
+        return tensors
 
 
 class SequentialDistributedSampler(Sampler):

@@ -3775,7 +3775,8 @@ class Trainer:
         all_labels = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
         all_inputs = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
 
-        metrics = None
+        metrics = {}
+        do_compute_eval_metrics_on_batch = self.args.batch_eval_metrics and description == "Evaluation"
 
         # Will be useful when we have an iterable dataset so don't know its length.
         observed_num_examples = 0
@@ -3791,7 +3792,13 @@ class Trainer:
                     batch_size = observed_batch_size
 
             # Prediction step
-            losses, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+            losses, logits, labels = self.prediction_step(
+                model,
+                inputs,
+                prediction_loss_only,
+                ignore_keys=ignore_keys,
+                preserve_model_output=self.args.eval_preserve_model_output,
+            )
             main_input_name = getattr(self.model, "main_input_name", "input_ids")
             inputs_decode = self._prepare_input(inputs[main_input_name]) if args.include_inputs_for_metrics else None
 
@@ -3805,49 +3812,53 @@ class Trainer:
             if inputs_decode is not None:
                 inputs_decode = self.accelerator.pad_across_processes(inputs_decode, dim=1, pad_index=-100)
                 inputs_decode = self.gather_function((inputs_decode))
-                if not self.args.batch_eval_metrics or description == "Prediction":
-                    all_inputs.add(inputs_decode)
+                all_inputs.add(inputs_decode)
             if logits is not None:
                 logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
                 if self.preprocess_logits_for_metrics is not None:
                     logits = self.preprocess_logits_for_metrics(logits, labels)
                 logits = self.gather_function((logits))
-                if not self.args.batch_eval_metrics or description == "Prediction":
-                    all_preds.add(logits)
+                all_preds.add(logits)
             if labels is not None:
                 labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
                 labels = self.gather_function((labels))
-                if not self.args.batch_eval_metrics or description == "Prediction":
-                    all_labels.add(labels)
+                all_labels.add(labels)
 
             self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
 
-            if self.args.batch_eval_metrics:
-                if self.compute_metrics is not None and logits is not None and labels is not None:
-                    is_last_step = self.accelerator.gradient_state.end_of_dataloader
-                    if args.include_inputs_for_metrics:
-                        metrics = self.compute_metrics(
-                            EvalPrediction(predictions=logits, label_ids=labels, inputs=inputs),
-                            compute_result=is_last_step,
-                        )
-                    else:
-                        metrics = self.compute_metrics(
-                            EvalPrediction(predictions=logits, label_ids=labels),
-                            compute_result=is_last_step,
-                        )
+            # Compute metrics on batch if `batch_eval_metrics=True` and description == "Evaluation"
+            # We also reset containers on this step in order to release memory, thus
+            # on the end of the "Evaluation"! loop we DO NOT return predictions and labels.
+            # It's is OK, because they are not used in .evaluate() somehow.
+            if (
+                do_compute_eval_metrics_on_batch
+                and self.compute_metrics is not None
+                and logits is not None
+                and labels is not None
+            ):
+                to_numpy = self.args.eval_numpify_tensors
+                logits = all_preds.get(to_cpu=True, to_numpy=to_numpy)
+                label_ids = all_labels.get(to_cpu=True, to_numpy=to_numpy)
+                inputs = all_inputs.get(to_cpu=True, to_numpy=to_numpy) if args.include_inputs_for_metrics else None
+                eval_preditction = EvalPrediction(predictions=logits, label_ids=label_ids, inputs=inputs)
 
-                del losses, logits, labels, inputs
-                torch.cuda.empty_cache()
+                # update or compute metrics
+                do_compute_result = self.accelerator.gradient_state.end_of_dataloader
+                metrics = self.compute_metrics(eval_preditction, compute_result=do_compute_result)
 
-            # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
-            elif args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
-                all_losses.to_cpu_and_numpy()
-                all_preds.to_cpu_and_numpy()
-                all_labels.to_cpu_and_numpy()
-                all_inputs.to_cpu_and_numpy()
+                # reset containers
+                all_preds.reset(), all_labels.reset(), all_inputs.reset()
 
-                del losses, logits, labels, inputs
-                torch.cuda.empty_cache()
+            # Put tesnors on the CPU if we have done enough accumulation steps.
+            if (
+                not self.args.batch_eval_metrics
+                and args.eval_accumulation_steps is not None
+                and (step + 1) % args.eval_accumulation_steps == 0
+            ):
+                all_losses.cpu()
+                all_preds.cpu()
+                all_labels.cpu()
+                all_inputs.cpu()
 
         # After all calls to `.gather_function`, reset to `gather_for_metrics`:
         self.gather_function = self.accelerator.gather_for_metrics
@@ -3856,10 +3867,11 @@ class Trainer:
             delattr(self, "_past")
 
         # Gather all remaining tensors and put them back on the CPU
-        all_losses = all_losses.get_arrays()
-        all_preds = all_preds.get_arrays()
-        all_labels = all_labels.get_arrays()
-        all_inputs = all_inputs.get_arrays()
+        to_numpy = self.args.eval_numpify_tensors
+        all_losses = all_losses.get(to_cpu=True, to_numpy=to_numpy)
+        all_preds = all_preds.get(to_cpu=True, to_numpy=to_numpy)
+        all_labels = all_labels.get(to_cpu=True, to_numpy=to_numpy)
+        all_inputs = all_inputs.get(to_cpu=True, to_numpy=to_numpy)
 
         # Number of samples
         if has_length(eval_dataset):
@@ -3876,21 +3888,16 @@ class Trainer:
         if num_samples == 0 and observed_num_examples > 0:
             num_samples = observed_num_examples
 
-        # Metrics!
+        # Call compute metrics on epoch end only if we didn't compute them on each batch.
         if (
-            self.compute_metrics is not None
+            not do_compute_eval_metrics_on_batch
+            and self.compute_metrics is not None
             and all_preds is not None
             and all_labels is not None
-            and not self.args.batch_eval_metrics
         ):
-            if args.include_inputs_for_metrics:
-                metrics = self.compute_metrics(
-                    EvalPrediction(predictions=all_preds, label_ids=all_labels, inputs=all_inputs)
-                )
-            else:
-                metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
-        elif metrics is None:
-            metrics = {}
+            inputs = all_inputs if args.include_inputs_for_metrics else None
+            eval_predictions = EvalPrediction(predictions=all_preds, label_ids=all_labels, inputs=all_inputs)
+            metrics = self.compute_metrics(eval_predictions)
 
         # To be JSON-serializable, we need to remove numpy types or zero-d tensors
         metrics = denumpify_detensorize(metrics)
@@ -3934,6 +3941,7 @@ class Trainer:
         inputs: Dict[str, Union[torch.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        preserve_model_output: bool = False,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
         Perform an evaluation step on `model` using `inputs`.
@@ -3953,10 +3961,12 @@ class Trainer:
             ignore_keys (`List[str]`, *optional*):
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
                 gathering predictions.
+            preserve_model_output (`bool`, *optional*, defaults to `False`):
+                Whether to return the outputs of the model as `ModelOutput` objects, or to return the outputs unpacked as a tuple.
 
         Return:
-            Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]: A tuple with the loss,
-            logits and labels (each being optional).
+            Tuple[Optional[torch.Tensor], Optional[Union[torch.Tensor, Tuple[torch.Tensor], ModelOutput]], Optional[torch.Tensor]]:
+            A tuple with the loss, tuple of logits/model outputs and labels (each being optional).
         """
         has_labels = False if len(self.label_names) == 0 else all(inputs.get(k) is not None for k in self.label_names)
         # For CLIP-like models capable of returning loss values.
@@ -3984,23 +3994,23 @@ class Trainer:
 
         with torch.no_grad():
             if is_sagemaker_mp_enabled():
-                raw_outputs = smp_forward_only(model, inputs)
+                outputs = smp_forward_only(model, inputs)
                 if has_labels or loss_without_labels:
-                    if isinstance(raw_outputs, dict):
-                        loss_mb = raw_outputs["loss"]
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys + ["loss"])
+                    if isinstance(outputs, dict):
+                        loss_mb = outputs["loss"]
+                        logits_mb = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
                     else:
-                        loss_mb = raw_outputs[0]
-                        logits_mb = raw_outputs[1:]
+                        loss_mb = outputs[0]
+                        logits_mb = outputs[1:]
 
                     loss = loss_mb.reduce_mean().detach().cpu()
                     logits = smp_nested_concat(logits_mb)
                 else:
                     loss = None
-                    if isinstance(raw_outputs, dict):
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys)
+                    if isinstance(outputs, dict):
+                        logits_mb = tuple(v for k, v in outputs.items() if k not in ignore_keys)
                     else:
-                        logits_mb = raw_outputs
+                        logits_mb = outputs
                     logits = smp_nested_concat(logits_mb)
             else:
                 if has_labels or loss_without_labels:
@@ -4026,6 +4036,10 @@ class Trainer:
 
         if prediction_loss_only:
             return (loss, None, None)
+
+        if preserve_model_output:
+            outputs = nested_detach(outputs)
+            return (loss, outputs, labels)
 
         logits = nested_detach(logits)
         if len(logits) == 1:
