@@ -26,6 +26,7 @@ from transformers import (
     AddedToken,
     LlamaTokenizer,
     LlamaTokenizerFast,
+    AutoTokenizer,
     is_torch_available,
 )
 from transformers.convert_slow_tokenizer import convert_slow_tokenizer
@@ -397,6 +398,19 @@ class LlamaIntegrationTest(unittest.TestCase):
 
         self.tokenizer.add_eos_token = False
         self.rust_tokenizer.add_eos_token = False
+
+    def test_bos_eos_tokens(self):
+        tokenizer_fast = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B", add_bos_token=False, add_eos_token=True)
+        bos_token_id = tokenizer_fast.bos_token_id
+        eos_token_id = tokenizer_fast.eos_token_id
+
+        assert tokenizer_fast("hello")['input_ids'][0] != bos_token_id
+        assert tokenizer_fast("hello")['input_ids'][-1] == eos_token_id
+
+        tokenizer_fast.add_special_tokens({'eos_token': '<ita_bos>'})
+        tokens = tokenizer_fast.tokenize('hello', add_special_tokens=True)
+
+        assert tokens[-1] == '<ita_bos>'
 
     @slow
     def test_conversion(self):

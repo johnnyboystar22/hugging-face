@@ -189,6 +189,9 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             self.add_eos_token = kwargs.get("add_eos_token")
             self._update_post_processor()
 
+        self._add_bos_token = kwargs.get("add_bos_token", None)
+        self._add_eos_token = kwargs.get("add_eos_token", None)
+
         if len(tokens_to_add) > 0:
             # super hack: if a token.special is set, tokenizer ignores it for now so FIXME @ArthurZ
             # Accumulate added tokens into batches of special/non-special tokens, because calling add_tokens() for
@@ -871,6 +874,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
 
         return self.__class__(tokenizer_object=tokenizer, **kwargs)
 
+    # Copied from LlamaTokenizerFast (update_post_processor, add_bos_token, add_eos_token
     def _update_post_processor(self):
         """
         Updates the underlying post processor with the current `bos_token` and `eos_token`.
@@ -896,3 +900,22 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         self._tokenizer.post_processor = processors.TemplateProcessing(
             single=single, pair=pair, special_tokens=special_tokens
         )
+
+    @property
+    def add_eos_token(self):
+        return self._add_eos_token
+
+    @property
+    def add_bos_token(self):
+        return self._add_bos_token
+
+    @add_eos_token.setter
+    def add_eos_token(self, value):
+        self._add_eos_token = value
+        self._update_post_processor()
+
+    @add_bos_token.setter
+    def add_bos_token(self, value):
+        self._add_bos_token = value
+        self._update_post_processor()
+
