@@ -3774,10 +3774,10 @@ class Trainer:
         is_evaluation_stage = description == "Evaluation"
 
         # Initialize containers
-        all_losses = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
-        all_preds = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
-        all_labels = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
-        all_inputs = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
+        all_losses = EvalLoopContainer(args.eval_do_concat_batches, padding_index=-100)
+        all_preds = EvalLoopContainer(args.eval_do_concat_batches, padding_index=-100)
+        all_labels = EvalLoopContainer(args.eval_do_concat_batches, padding_index=-100)
+        all_inputs = EvalLoopContainer(args.eval_do_concat_batches, padding_index=-100)
 
         # Will be useful when we have an iterable dataset so don't know its length.
         observed_num_examples = 0
@@ -3798,7 +3798,7 @@ class Trainer:
                 inputs,
                 prediction_loss_only,
                 ignore_keys=ignore_keys,
-                preserve_model_output=self.args.eval_preserve_model_output,
+                preserve_model_output=args.eval_preserve_model_output,
             )
             main_input_name = getattr(self.model, "main_input_name", "input_ids")
             inputs_decode = self._prepare_input(inputs[main_input_name]) if args.include_inputs_for_metrics else None
@@ -3825,10 +3825,13 @@ class Trainer:
             # except the case for "Evaluation" stage + batch_eval_metrics=True ->
             # out target is to compute metrics only, we do not store inputs and results in order to save memory
             all_losses.add(losses)
-            if not (self.args.batch_eval_metrics and is_evaluation_stage):
-                all_inputs.add(inputs_decode)
+            if not (args.batch_eval_metrics and is_evaluation_stage):
                 all_preds.add(logits)
                 all_labels.add(labels)
+
+                # Store inputs only if specified, reducing memory consumption
+                if args.include_inputs_for_metrics:
+                    all_inputs.add(inputs_decode)
 
             # Put tesnors on the CPU if we have done enough accumulation steps to save GPU memory
             if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
@@ -3841,7 +3844,7 @@ class Trainer:
 
             # Compute metrics on batch if `training_args.batch_eval_metrics=True`
             if (
-                self.args.batch_eval_metrics
+                args.batch_eval_metrics
                 and self.compute_metrics is not None
                 and logits is not None
                 and labels is not None
@@ -3850,7 +3853,7 @@ class Trainer:
                 eval_batch_logits = None
                 eval_batch_labels = None
 
-                to_numpy = self.args.eval_numpify_tensors
+                to_numpy = args.eval_numpify_tensors
 
                 if inputs_decode is not None and args.include_inputs_for_metrics:
                     eval_batch_inputs = nested_numpify(inputs_decode) if to_numpy else nested_cpu(inputs_decode)
@@ -3876,10 +3879,10 @@ class Trainer:
             delattr(self, "_past")
 
         # Get all collected tensors during the loop (all on CPU device)
-        all_losses = all_losses.get(to_numpy=self.args.eval_numpify_tensors)
-        all_preds = all_preds.get(to_numpy=self.args.eval_numpify_tensors)
-        all_labels = all_labels.get(to_numpy=self.args.eval_numpify_tensors)
-        all_inputs = all_inputs.get(to_numpy=self.args.eval_numpify_tensors)
+        all_losses = all_losses.get(to_numpy=args.eval_numpify_tensors)
+        all_preds = all_preds.get(to_numpy=args.eval_numpify_tensors)
+        all_labels = all_labels.get(to_numpy=args.eval_numpify_tensors)
+        all_inputs = all_inputs.get(to_numpy=args.eval_numpify_tensors)
 
         # Number of samples
         if has_length(eval_dataset):
@@ -3898,12 +3901,11 @@ class Trainer:
 
         # Call compute metrics on epoch end only if we didn't compute them on each batch.
         if (
-            not self.args.batch_eval_metrics
+            not args.batch_eval_metrics
             and self.compute_metrics is not None
             and all_preds is not None
             and all_labels is not None
         ):
-            inputs = all_inputs if args.include_inputs_for_metrics else None
             eval_predictions = EvalPrediction(predictions=all_preds, label_ids=all_labels, inputs=all_inputs)
             metrics = self.compute_metrics(eval_predictions)
 
