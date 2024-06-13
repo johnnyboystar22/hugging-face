@@ -3771,8 +3771,7 @@ class Trainer:
             self._past = None
 
         metrics = {}
-        do_compute_metrics_on_batch = self.args.batch_eval_metrics
-        is_evatuation_stage = description == "Evaluation"
+        is_evaluation_stage = description == "Evaluation"
 
         # Initialize containers
         all_losses = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
@@ -3826,7 +3825,7 @@ class Trainer:
             # except the case for "Evaluation" stage + batch_eval_metrics=True ->
             # out target is to compute metrics only, we do not store inputs and results in order to save memory
             all_losses.add(losses)
-            if not (do_compute_metrics_on_batch and is_evatuation_stage):
+            if not (self.args.batch_eval_metrics and is_evaluation_stage):
                 all_inputs.add(inputs_decode)
                 all_preds.add(logits)
                 all_labels.add(labels)
@@ -3842,7 +3841,7 @@ class Trainer:
 
             # Compute metrics on batch if `training_args.batch_eval_metrics=True`
             if (
-                do_compute_metrics_on_batch
+                self.args.batch_eval_metrics
                 and self.compute_metrics is not None
                 and logits is not None
                 and labels is not None
@@ -3899,7 +3898,7 @@ class Trainer:
 
         # Call compute metrics on epoch end only if we didn't compute them on each batch.
         if (
-            not do_compute_metrics_on_batch
+            not self.args.batch_eval_metrics
             and self.compute_metrics is not None
             and all_preds is not None
             and all_labels is not None
