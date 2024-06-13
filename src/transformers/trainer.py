@@ -3772,6 +3772,7 @@ class Trainer:
 
         metrics = {}
         is_evaluation_stage = description == "Evaluation"
+        do_accumulate_epoch_data = not (is_evaluation_stage and args.batch_eval_metrics)
 
         # Initialize containers
         all_losses = EvalLoopContainer(args.eval_do_concat_batches, padding_index=-100)
@@ -3806,41 +3807,27 @@ class Trainer:
             if is_torch_xla_available():
                 xm.mark_step()
 
-            # Pad across processes and gather
+            # Pad across processes, gather and collect
             if losses is not None:
                 losses = self.gather_function((losses.repeat(batch_size)))
-            if inputs_decode is not None:
+                all_losses.add(losses)
+            if inputs_decode is not None and args.include_inputs_for_metrics:
                 inputs_decode = self.accelerator.pad_across_processes(inputs_decode, dim=1, pad_index=-100)
                 inputs_decode = self.gather_function((inputs_decode))
+                if do_accumulate_epoch_data:
+                    all_inputs.add(inputs_decode)
             if logits is not None:
                 logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
                 if self.preprocess_logits_for_metrics is not None:
                     logits = self.preprocess_logits_for_metrics(logits, labels)
                 logits = self.gather_function((logits))
+                if do_accumulate_epoch_data:
+                    all_preds.add(logits)
             if labels is not None:
                 labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
                 labels = self.gather_function((labels))
-
-            # Update global containers
-            # except the case for "Evaluation" stage + batch_eval_metrics=True ->
-            # out target is to compute metrics only, we do not store inputs and results in order to save memory
-            all_losses.add(losses)
-            if not (args.batch_eval_metrics and is_evaluation_stage):
-                all_preds.add(logits)
-                all_labels.add(labels)
-
-                # Store inputs only if specified, reducing memory consumption
-                if args.include_inputs_for_metrics:
-                    all_inputs.add(inputs_decode)
-
-            # Put tesnors on the CPU if we have done enough accumulation steps to save GPU memory
-            if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
-                all_losses.cpu()
-                all_preds.cpu()
-                all_labels.cpu()
-                all_inputs.cpu()
-
-            self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
+                if do_accumulate_epoch_data:
+                    all_labels.add(labels)
 
             # Compute metrics on batch if `training_args.batch_eval_metrics=True`
             if (
@@ -3871,6 +3858,15 @@ class Trainer:
                 # update or compute metrics
                 do_compute_result = self.accelerator.gradient_state.end_of_dataloader
                 metrics = self.compute_metrics(eval_preditction, compute_result=do_compute_result)
+
+            # Put tesnors on the CPU if we have done enough accumulation steps to save GPU memory
+            if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
+                all_losses.cpu()
+                all_preds.cpu()
+                all_labels.cpu()
+                all_inputs.cpu()
+
+            self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
 
         # After all calls to `.gather_function`, reset to `gather_for_metrics`:
         self.gather_function = self.accelerator.gather_for_metrics
