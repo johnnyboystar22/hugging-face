@@ -3807,27 +3807,34 @@ class Trainer:
             if is_torch_xla_available():
                 xm.mark_step()
 
-            # Pad across processes, gather and collect
+            # Pad across processes and gather
             if losses is not None:
                 losses = self.gather_function((losses.repeat(batch_size)))
-                all_losses.add(losses)
-            if inputs_decode is not None and args.include_inputs_for_metrics:
+            if inputs_decode is not None:
                 inputs_decode = self.accelerator.pad_across_processes(inputs_decode, dim=1, pad_index=-100)
                 inputs_decode = self.gather_function((inputs_decode))
-                if do_accumulate_epoch_data:
-                    all_inputs.add(inputs_decode)
             if logits is not None:
                 logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
                 if self.preprocess_logits_for_metrics is not None:
                     logits = self.preprocess_logits_for_metrics(logits, labels)
                 logits = self.gather_function((logits))
-                if do_accumulate_epoch_data:
-                    all_preds.add(logits)
             if labels is not None:
                 labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
                 labels = self.gather_function((labels))
-                if do_accumulate_epoch_data:
-                    all_labels.add(labels)
+
+            # Collect inputs, predictions and labels for the whole epoch
+            all_losses.add(losses)
+            if do_accumulate_epoch_data:
+                all_inputs.add(inputs_decode)
+                all_preds.add(logits)
+                all_labels.add(labels)
+
+            # Put tesnors on the CPU if we have done enough accumulation steps to save GPU memory
+            if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
+                all_losses.cpu()
+                all_preds.cpu()
+                all_labels.cpu()
+                all_inputs.cpu()
 
             # Compute metrics on batch if `training_args.batch_eval_metrics=True`
             if (
@@ -3842,7 +3849,7 @@ class Trainer:
 
                 to_numpy = args.eval_numpify_tensors
 
-                if inputs_decode is not None and args.include_inputs_for_metrics:
+                if inputs_decode is not None:
                     eval_batch_inputs = nested_numpify(inputs_decode) if to_numpy else nested_cpu(inputs_decode)
                 if logits is not None:
                     eval_batch_logits = nested_numpify(logits) if to_numpy else nested_cpu(logits)
@@ -3858,13 +3865,6 @@ class Trainer:
                 # update or compute metrics
                 do_compute_result = self.accelerator.gradient_state.end_of_dataloader
                 metrics = self.compute_metrics(eval_preditction, compute_result=do_compute_result)
-
-            # Put tesnors on the CPU if we have done enough accumulation steps to save GPU memory
-            if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
-                all_losses.cpu()
-                all_preds.cpu()
-                all_labels.cpu()
-                all_inputs.cpu()
 
             self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
 
