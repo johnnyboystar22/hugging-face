@@ -100,6 +100,7 @@ from .trainer_pt_utils import (
     get_module_class_from_name,
     get_parameter_names,
     nested_concat,
+    nested_cpu,
     nested_detach,
     nested_numpify,
     nested_xla_mesh_reduce,
@@ -3769,14 +3770,15 @@ class Trainer:
         if args.past_index >= 0:
             self._past = None
 
+        metrics = {}
+        do_compute_metrics_on_batch = self.args.batch_eval_metrics
+        is_evatuation_stage = description == "Evaluation"
+
         # Initialize containers
         all_losses = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
         all_preds = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
         all_labels = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
         all_inputs = EvalLoopContainer(self.args.eval_do_concat_batches, padding_index=-100)
-
-        metrics = {}
-        do_compute_eval_metrics_on_batch = self.args.batch_eval_metrics and description == "Evaluation"
 
         # Will be useful when we have an iterable dataset so don't know its length.
         observed_num_examples = 0
@@ -3805,60 +3807,68 @@ class Trainer:
             if is_torch_xla_available():
                 xm.mark_step()
 
-            # Update containers
+            # Pad across processes and gather
             if losses is not None:
                 losses = self.gather_function((losses.repeat(batch_size)))
-                all_losses.add(losses)
             if inputs_decode is not None:
                 inputs_decode = self.accelerator.pad_across_processes(inputs_decode, dim=1, pad_index=-100)
                 inputs_decode = self.gather_function((inputs_decode))
-                all_inputs.add(inputs_decode)
             if logits is not None:
                 logits = self.accelerator.pad_across_processes(logits, dim=1, pad_index=-100)
                 if self.preprocess_logits_for_metrics is not None:
                     logits = self.preprocess_logits_for_metrics(logits, labels)
                 logits = self.gather_function((logits))
-                all_preds.add(logits)
             if labels is not None:
                 labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
                 labels = self.gather_function((labels))
+
+            # Update global containers
+            # except the case for "Evaluation" stage + batch_eval_metrics=True ->
+            # out target is to compute metrics only, we do not store inputs and results in order to save memory
+            all_losses.add(losses)
+            if not (do_compute_metrics_on_batch and is_evatuation_stage):
+                all_inputs.add(inputs_decode)
+                all_preds.add(logits)
                 all_labels.add(labels)
 
-            self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
-
-            # Compute metrics on batch if `batch_eval_metrics=True` and description == "Evaluation"
-            # We also reset containers on this step in order to release memory, thus
-            # on the end of the "Evaluation"! loop we DO NOT return predictions and labels.
-            # It's is OK, because they are not used in .evaluate() somehow.
-            if (
-                do_compute_eval_metrics_on_batch
-                and self.compute_metrics is not None
-                and logits is not None
-                and labels is not None
-            ):
-                to_numpy = self.args.eval_numpify_tensors
-                logits = all_preds.get(to_cpu=True, to_numpy=to_numpy)
-                label_ids = all_labels.get(to_cpu=True, to_numpy=to_numpy)
-                inputs = all_inputs.get(to_cpu=True, to_numpy=to_numpy) if args.include_inputs_for_metrics else None
-                eval_preditction = EvalPrediction(predictions=logits, label_ids=label_ids, inputs=inputs)
-
-                # update or compute metrics
-                do_compute_result = self.accelerator.gradient_state.end_of_dataloader
-                metrics = self.compute_metrics(eval_preditction, compute_result=do_compute_result)
-
-                # reset containers
-                all_preds.reset(), all_labels.reset(), all_inputs.reset()
-
-            # Put tesnors on the CPU if we have done enough accumulation steps.
-            if (
-                not self.args.batch_eval_metrics
-                and args.eval_accumulation_steps is not None
-                and (step + 1) % args.eval_accumulation_steps == 0
-            ):
+            # Put tesnors on the CPU if we have done enough accumulation steps to save GPU memory
+            if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
                 all_losses.cpu()
                 all_preds.cpu()
                 all_labels.cpu()
                 all_inputs.cpu()
+
+            self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
+
+            # Compute metrics on batch if `training_args.batch_eval_metrics=True`
+            if (
+                do_compute_metrics_on_batch
+                and self.compute_metrics is not None
+                and logits is not None
+                and labels is not None
+            ):
+                eval_batch_inputs = None
+                eval_batch_logits = None
+                eval_batch_labels = None
+
+                to_numpy = self.args.eval_numpify_tensors
+
+                if inputs_decode is not None and args.include_inputs_for_metrics:
+                    eval_batch_inputs = nested_numpify(inputs_decode) if to_numpy else nested_cpu(inputs_decode)
+                if logits is not None:
+                    eval_batch_logits = nested_numpify(logits) if to_numpy else nested_cpu(logits)
+                if labels is not None:
+                    eval_batch_labels = nested_numpify(labels) if to_numpy else nested_cpu(labels)
+
+                eval_preditction = EvalPrediction(
+                    predictions=eval_batch_logits,
+                    label_ids=eval_batch_labels,
+                    inputs=eval_batch_inputs,
+                )
+
+                # update or compute metrics
+                do_compute_result = self.accelerator.gradient_state.end_of_dataloader
+                metrics = self.compute_metrics(eval_preditction, compute_result=do_compute_result)
 
         # After all calls to `.gather_function`, reset to `gather_for_metrics`:
         self.gather_function = self.accelerator.gather_for_metrics
@@ -3866,12 +3876,11 @@ class Trainer:
             # Clean the state at the end of the evaluation loop
             delattr(self, "_past")
 
-        # Gather all remaining tensors and put them back on the CPU
-        to_numpy = self.args.eval_numpify_tensors
-        all_losses = all_losses.get(to_cpu=True, to_numpy=to_numpy)
-        all_preds = all_preds.get(to_cpu=True, to_numpy=to_numpy)
-        all_labels = all_labels.get(to_cpu=True, to_numpy=to_numpy)
-        all_inputs = all_inputs.get(to_cpu=True, to_numpy=to_numpy)
+        # Get all collected tensors during the loop (all on CPU device)
+        all_losses = all_losses.get(to_numpy=self.args.eval_numpify_tensors)
+        all_preds = all_preds.get(to_numpy=self.args.eval_numpify_tensors)
+        all_labels = all_labels.get(to_numpy=self.args.eval_numpify_tensors)
+        all_inputs = all_inputs.get(to_numpy=self.args.eval_numpify_tensors)
 
         # Number of samples
         if has_length(eval_dataset):
@@ -3890,7 +3899,7 @@ class Trainer:
 
         # Call compute metrics on epoch end only if we didn't compute them on each batch.
         if (
-            not do_compute_eval_metrics_on_batch
+            not do_compute_metrics_on_batch
             and self.compute_metrics is not None
             and all_preds is not None
             and all_labels is not None

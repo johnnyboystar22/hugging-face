@@ -514,8 +514,8 @@ class TrainerUtilsTest(unittest.TestCase):
         concat_container = EvalLoopContainer(do_nested_concat=True, padding_index=-100)
         concat_container.add(batch_1)
         concat_container.add(batch_2)
-        arrays = concat_container.get(to_cpu=True, to_numpy=True)
-        tensors = concat_container.get(to_cpu=True, to_numpy=False)
+        arrays = concat_container.get(to_numpy=True)
+        tensors = concat_container.get(to_numpy=False)
 
         # Test two nested batches concatenation
         self.assertIsInstance(tensors, list)
@@ -541,8 +541,8 @@ class TrainerUtilsTest(unittest.TestCase):
         list_container = EvalLoopContainer(do_nested_concat=False)
         list_container.add(batch_1)
         list_container.add(batch_2)
-        arrays = list_container.get(to_cpu=True, to_numpy=True)
-        tensors = list_container.get(to_cpu=True, to_numpy=False)
+        arrays = list_container.get(to_numpy=True)
+        tensors = list_container.get(to_numpy=False)
 
         self.assertEqual(len(arrays), 2)
         self.assertIsInstance(arrays, list)

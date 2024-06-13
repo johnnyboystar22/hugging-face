@@ -324,57 +324,64 @@ class EvalLoopContainer:
     def __init__(self, do_nested_concat: bool = True, padding_index: int = -100):
         self.do_nested_concat = do_nested_concat
         self.padding_index = padding_index
-        self.data = None
+        self.device_tensors = None
+        self.cpu_tensors = None
 
-    def add(self, tensors) -> None:
-        """Add tensors to the stored objects. If `do_nested_concat=True`, the tensors will be concatenated
+    def add(self, device_tensors) -> None:
+        """Add device_tensors to the stored objects. If `do_nested_concat=True`, the tensors will be concatenated
         recursively, otherwise they will be stored in a list."""
+        if device_tensors is None:
+            return
 
-        # If `do_nested_concat=True` self.data will be a nested structure of tensors
-        if self.do_nested_concat:
-            if self.data is None:
-                self.data = tensors
+        # If `do_nested_concat=True` self.device_tensors will be a nested structure of tensors
+        elif self.do_nested_concat:
+            if self.device_tensors is None:
+                self.device_tensors = device_tensors
             else:
-                self.data = nested_concat(self.data, tensors, padding_index=self.padding_index)
+                self.device_tensors = nested_concat(
+                    self.device_tensors, device_tensors, padding_index=self.padding_index
+                )
 
-        # If `do_nested_concat=False` self.data will be a list of tensors
+        # If `do_nested_concat=False` self.device_tensors will be a list of tensors
         else:
-            if self.data is None:
-                self.data = [tensors]
+            if self.device_tensors is None:
+                self.device_tensors = [device_tensors]
             else:
-                self.data.append(tensors)
-
-    def reset(self) -> None:
-        """Reset the stored objects (inplace)."""
-        self.data = None
+                self.device_tensors.append(device_tensors)
 
     def cpu(self) -> None:
-        """Move stored tensors to CPU (inplace)."""
-        if self.data is not None:
-            self.data = nested_cpu(self.data)
+        """Move all stored tensors to CPU (inplace)."""
 
-    def get(self, to_cpu: bool = True, to_numpy: bool = False) -> Any:
-        """Return the stored tensors objects.
+        # Check if we have something to add, if not just return
+        if self.device_tensors is None:
+            return
+
+        new_cpu_data = nested_cpu(self.device_tensors)
+        if self.cpu_tensors is None:
+            self.cpu_tensors = new_cpu_data
+        elif self.do_nested_concat:
+            self.cpu_tensors = nested_concat(self.cpu_tensors, new_cpu_data, padding_index=self.padding_index)
+        else:
+            self.cpu_tensors.extend(new_cpu_data)
+
+        # reset device tensors after adding to cpu
+        self.device_tensors = None
+
+    def get(self, to_numpy: bool = False) -> Any:
+        """Return all the stored tensors objects. All tensors are located to CPU device.
 
         Args:
-            to_cpu (`bool`, *optional*, defaults to `True`):
-                Whether to move the tensors to CPU.
             to_numpy (`bool`, *optional*, defaults to `False`):
                 Whether to convert the tensors to numpy format.
 
         Returns:
             The stored objects with torch tensors or numpy arrays. If no tensors are stored, returns `None`.
         """
-        tensors = self.data
-        if tensors is None:
-            return None
+        if self.device_tensors is not None:
+            self.cpu()
 
-        if to_cpu:
-            tensors = nested_cpu(tensors)
-        if to_numpy:
-            tensors = nested_numpify(tensors)
-
-        return tensors
+        if self.cpu_tensors is not None:
+            return nested_numpify(self.cpu_tensors) if to_numpy else self.cpu_tensors
 
 
 class SequentialDistributedSampler(Sampler):
