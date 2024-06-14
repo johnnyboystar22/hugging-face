@@ -185,6 +185,9 @@ class LlamaTokenizer(PreTrainedTokenizer):
             add_prefix_space=add_prefix_space,
             **kwargs,
         )
+        # TODO:ita
+        # self.add_bos_token = add_bos_token
+        # self.add_eos_token = add_eos_token
 
     @property
     def unk_token_length(self):
@@ -260,12 +263,14 @@ class LlamaTokenizer(PreTrainedTokenizer):
         `unk_token`. Here is an example with `unk_token = "<unk>"` and `unk_token_length = 4`.
         `self.tokenizer.sp_model.encode("<unk> Hey", out_type = str)[4:]`.
         """
-        tokens = self.sp_model.encode(text, out_type=str)
+        add_bos_token = kwargs.pop("add_bos_token", None)
+        add_eos_token = kwargs.pop("add_eos_token", None)
+        tokens = self.sp_model.encode(text, out_type=str, add_bos=add_bos_token, add_eos=add_eos_token)
         if self.legacy or not text.startswith((SPIECE_UNDERLINE, " ")):
             return tokens
 
         # 1. Encode string + prefix ex: "<unk> Hey"
-        tokens = self.sp_model.encode(self.unk_token + text, out_type=str)
+        tokens = self.sp_model.encode(self.unk_token + text, add_bos=add_bos_token, add_eos=add_eos_token, out_type=str)
         # 2. Remove self.unk_token from ['<','unk','>', '▁Hey']
         return tokens[self.unk_token_length :] if len(tokens) >= self.unk_token_length else tokens
 

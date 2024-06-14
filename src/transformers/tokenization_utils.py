@@ -584,6 +584,10 @@ class PreTrainedTokenizer(PreTrainedTokenizerBase):
             if token not in self.tokens_trie._tokens:
                 self.tokens_trie.add(token)
 
+    def _update_bos_eos_tokens(self):
+        # TODO:ita for slow
+        return
+
     def num_special_tokens_to_add(self, pair: bool = False) -> int:
         """
         Returns the number of added tokens when encoding a sequence with special tokens.
@@ -676,14 +680,20 @@ class PreTrainedTokenizer(PreTrainedTokenizerBase):
                     )
         # ["This is something", "<special_token_1>", "else"]
         tokenized_text = []
-        for token in tokens:
+        for idx, token in enumerate(tokens):
             # Need to skip eventual empty (fully stripped) tokens
+            add_bos_token = None
+            add_eos_token = None
             if not token:
                 continue
+            if idx == 0 and kwargs.get("add_special_tokens", None) is True:
+                add_bos_token = self.add_bos_token
+            elif idx == len(tokens) - 1 and kwargs.get("add_special_tokens", None) is True:
+                add_eos_token = self.add_eos_token
             if token in no_split_token:
                 tokenized_text.append(token)
             else:
-                tokenized_text.extend(self._tokenize(token))
+                tokenized_text.extend(self._tokenize(token, add_bos_token=add_bos_token, add_eos_token=add_eos_token))
         # ["This", " is", " something", "<special_token_1>", "else"]
         return tokenized_text
 

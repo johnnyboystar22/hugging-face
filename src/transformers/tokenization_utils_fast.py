@@ -163,6 +163,11 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             kwargs.setdefault("max_length", _padding["length"])
             kwargs.setdefault("pad_to_multiple_of", _padding["pad_to_multiple_of"])
 
+        self._add_bos_token = kwargs.get("add_bos_token", None)
+        self._add_eos_token = kwargs.get("add_eos_token", None)
+        # self._added_tokens_decoder = self.added_tokens_decoder
+        # self._added_tokens_encoder = self.added_tokens_encoder
+
         # We call this after having initialized the backend tokenizer because we update it.
         super().__init__(**kwargs)
 
@@ -184,13 +189,11 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
             token for token in self.all_special_tokens_extended if token not in encoder and token not in tokens_to_add
         ]
 
-        if type(self) == PreTrainedTokenizerFast and all(item in kwargs for item in ["add_bos_token", "add_eos_token", "eos_token", "bos_token"]):
-            self.add_bos_token = kwargs.get("add_bos_token")
-            self.add_eos_token = kwargs.get("add_eos_token")
-            self._update_post_processor()
+        # if type(self) == PreTrainedTokenizerFast and all(item in kwargs for item in ["add_bos_token", "add_eos_token", "eos_token", "bos_token"]):
+        #     self.add_bos_token = kwargs.get("add_bos_token")
+        #     self.add_eos_token = kwargs.get("add_eos_token")
+        #     self._update_post_processor()
 
-        self._add_bos_token = kwargs.get("add_bos_token", None)
-        self._add_eos_token = kwargs.get("add_eos_token", None)
 
         if len(tokens_to_add) > 0:
             # super hack: if a token.special is set, tokenizer ignores it for now so FIXME @ArthurZ
@@ -875,7 +878,7 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
         return self.__class__(tokenizer_object=tokenizer, **kwargs)
 
     # Copied from LlamaTokenizerFast (update_post_processor, add_bos_token, add_eos_token
-    def _update_post_processor(self):
+    def _update_bos_eos_tokens(self):
         """
         Updates the underlying post processor with the current `bos_token` and `eos_token`.
         """
@@ -912,10 +915,10 @@ class PreTrainedTokenizerFast(PreTrainedTokenizerBase):
     @add_eos_token.setter
     def add_eos_token(self, value):
         self._add_eos_token = value
-        self._update_post_processor()
+        self._update_bos_eos_tokens()
 
     @add_bos_token.setter
     def add_bos_token(self, value):
         self._add_bos_token = value
-        self._update_post_processor()
+        self._update_bos_eos_tokens()
 

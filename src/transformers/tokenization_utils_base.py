@@ -984,7 +984,7 @@ class SpecialTokensMixin:
 
         # if we are adding tokens that were not part of the vocab, we ought to add them
         added_tokens = self.add_tokens(added_tokens, special_tokens=True)
-        self._update_post_processor()
+        self._update_bos_eos_tokens()
         return added_tokens
 
     def add_tokens(
@@ -1135,7 +1135,16 @@ class SpecialTokensMixin:
     def bos_token(self, value):
         if not isinstance(value, (str, AddedToken)) and value is not None:
             raise ValueError("Cannot set a non-string value as the BOS token")
+        print('here')
+
+        #TODO:ita for slow
+        if getattr(self, "_added_tokens_encoder", None) is not None:
+            self._added_tokens_decoder = {k: v if v.content != self.bos_token else value for k, v in
+                                          self._added_tokens_decoder.items()}
+            self._added_tokens_encoder = {k: v for k, v in self._added_tokens_encoder.items() if v != self.bos_token_id}
+            self._added_tokens_encoder[value.content] = self.bos_token_id
         self._bos_token = value
+
 
     @eos_token.setter
     def eos_token(self, value):
