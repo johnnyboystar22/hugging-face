@@ -411,6 +411,10 @@ _import_structure = {
         "EncodecConfig",
         "EncodecFeatureExtractor",
     ],
+    "models.dac": [
+        "DacConfig",
+        "DacFeatureExtractor",
+    ],
     "models.encoder_decoder": ["EncoderDecoderConfig"],
     "models.ernie": ["ErnieConfig"],
     "models.esm": ["EsmConfig", "EsmTokenizer"],
@@ -2093,6 +2097,12 @@ else:
         [
             "EncodecModel",
             "EncodecPreTrainedModel",
+        ]
+    )
+    _import_structure["models.dac"].extend(
+        [
+            "DacModel",
+            "DacPreTrainedModel",
         ]
     )
     _import_structure["models.encoder_decoder"].append("EncoderDecoderModel")
@@ -5090,6 +5100,10 @@ if TYPE_CHECKING:
         EncodecConfig,
         EncodecFeatureExtractor,
     )
+    from .models.dac import (
+        DacConfig,
+        DacFeatureExtractor,
+    )
     from .models.encoder_decoder import EncoderDecoderConfig
     from .models.ernie import ErnieConfig
     from .models.esm import EsmConfig, EsmTokenizer
@@ -6668,6 +6682,10 @@ if TYPE_CHECKING:
         from .models.encodec import (
             EncodecModel,
             EncodecPreTrainedModel,
+        )
+        from .models.dac import (
+            DacModel,
+            DacPreTrainedModel,
         )
         from .models.encoder_decoder import EncoderDecoderModel
         from .models.ernie import (
