@@ -1747,12 +1747,6 @@ else:
             "DacPreTrainedModel",
         ]
     )
-    _import_structure["models.dac"].extend(
-        [
-            "DacModel",
-            "DacPreTrainedModel",
-        ]
-    )
     _import_structure["models.data2vec"].extend(
         [
             "Data2VecAudioForAudioFrameClassification",
@@ -6396,7 +6390,6 @@ if TYPE_CHECKING:
             CvtPreTrainedModel,
         )
         from .models.dac import (
-            DacFeatureExtractor,
             DacModel,
             DacPreTrainedModel,
         )
