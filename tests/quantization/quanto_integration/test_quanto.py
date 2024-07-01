@@ -46,6 +46,7 @@ class QuantoConfigTest(unittest.TestCase):
     def test_attributes(self):
         pass
 
+
 @require_optimum_quanto
 @require_accelerate
 class QuantoTestIntegration(unittest.TestCase):
@@ -367,9 +368,7 @@ class QuantoQuantizationOffloadTest(QuantoQuantizationTest):
         self.assertTrue(isinstance(disk_weights, torch.Tensor) and not isinstance(disk_weights, QTensor))
         if self.weights == "int4":
             self.assertTrue(isinstance(cpu_weights, torch.Tensor) and not isinstance(disk_weights, QBitsTensor))
-            self.assertTrue(
-                isinstance(disk_weights, torch.Tensor) and not isinstance(disk_weights, QBitsTensor)
-            )
+            self.assertTrue(isinstance(disk_weights, torch.Tensor) and not isinstance(disk_weights, QBitsTensor))
 
 
 @unittest.skip(reason="Skipping test class because serialization is not supported yet")

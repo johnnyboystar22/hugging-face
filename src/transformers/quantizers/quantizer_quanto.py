@@ -58,7 +58,9 @@ class QuantoHfQuantizer(HfQuantizer):
 
     def validate_environment(self, *args, **kwargs):
         if not is_optimum_quanto_available():
-            raise ImportError("Loading a quanto quantized model requires optimum-quanto library (`pip install optimum-quanto`)")
+            raise ImportError(
+                "Loading a quanto quantized model requires optimum-quanto library (`pip install optimum-quanto`)"
+            )
         if not is_accelerate_available():
             raise ImportError(
                 "Loading a quanto quantized model requires accelerate library (`pip install accelerate`)"
