@@ -1762,8 +1762,8 @@ class GenerationMixin:
 
                 if cache_config.backend == "quanto" and not is_optimum_quanto_available():
                     raise ImportError(
-                        "You need to install `quanto` in order to use KV cache quantization with quanto backend. "
-                        "Please install it via  with `pip install quanto`"
+                        "You need to install `optimum-quanto` in order to use KV cache quantization with quanto backend. "
+                        "Please install it via  with `pip install optimum-quanto`"
                     )
                 elif cache_config.backend == "HQQ" and not is_hqq_available():
                     raise ImportError(
