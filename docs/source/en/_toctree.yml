@@ -9,6 +9,7 @@
 - title: Pretrained models
   sections:
   - title: Models
+    isExpanded: false
     sections:
     - local: autoclass_tutorial
       title: AutoClass API
@@ -31,7 +32,10 @@
     - local: bertology
       title: BERTology
   - title: Tokenizers
+    isExpanded: false
     sections:
+    - local: preprocessing
+      title: Preprocess data
     - local: fast_tokenizers
       title: Use fast tokenizers from 🤗 Tokenizers
     - local: tokenizer_summary
@@ -39,6 +43,7 @@
     - local: pad_truncation
       title: Padding and truncation
   - title: Deploy to production
+    isExpanded: false
     sections:
     - local: serialization
       title: Export to ONNX
@@ -49,9 +54,8 @@
 - title: Training
   sections:
   - title: Trainer API
+    isExpanded: false
     sections:
-    - local: preprocessing
-      title: Preprocess data
     - local: training
       title: Fine-tune a pretrained model
     - local: trainer
@@ -61,6 +65,7 @@
     - local: run_scripts
       title: Train with a script
   - title: Distributed training
+    isExpanded: false
     sections:
     - local: accelerate
       title: Set up distributed training with 🤗 Accelerate
@@ -73,6 +78,7 @@
     - local: perf_train_cpu_many
       title: Distributed CPU training
   - title: Hardware-specific training
+    isExpanded: false
     sections:
     - local: perf_train_gpu_one
       title: Methods and tools for efficient training on a single GPU
@@ -95,6 +101,7 @@
 - title: Inference
   sections:
   - title: Pipeline API
+    isExpanded: false
     sections:
     - local: pipeline_tutorial
       title: Run inference with pipelines
@@ -103,6 +110,7 @@
     - local: add_new_pipeline
       title: How to add a pipeline to 🤗 Transformers?
   - title: LLMs
+    isExpanded: false
     sections:
     - local: tasks/prompting
       title: LLM prompting guide
@@ -117,12 +125,14 @@
     - local: perplexity
       title: Perplexity of fixed-length models
   - title: Chat models
+    isExpanded: false
     sections:
     - local: conversations
       title: Chatting with Transformers
     - local: chat_templating
       title: Templates for chat models
   - title: Framework-specific inference optimization
+    isExpanded: false
     sections:
     - local: tf_xla
       title: XLA Integration for TensorFlow Models
@@ -141,6 +151,7 @@
   - local: big_models
     title: Instantiate a big model
 - title: Quantization
+  isExpanded: false
   sections:
   - local: quantization/overview
     title: Getting started
@@ -248,7 +259,8 @@
   - local: glossary
     title: Glossary
 - sections:
-  - sections:
+  - isExpanded: false
+    sections:
     - local: main_classes/agent
       title: Agents and Tools
     - local: model_doc/auto
@@ -880,7 +892,8 @@
         title: Graphormer
       title: Graph models
     title: Models
-  - sections:
+  - isExpanded: false
+    sections:
     - local: internal/modeling_utils
       title: Custom Layers and Utilities
     - local: internal/pipelines_utils
