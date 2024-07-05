@@ -1401,6 +1401,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
         """
         torch_dtype = kwargs.pop("torch_dtype", None)
         use_flash_attention_2 = kwargs.pop("use_flash_attention_2", False)
+        disable_zero_init = kwargs.pop("disable_zero_init", False)
 
         # override default dtype if needed
         dtype_orig = None
@@ -1416,7 +1417,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
             torch_dtype=torch_dtype,
         )
 
-        if is_deepspeed_zero3_enabled():
+        if is_deepspeed_zero3_enabled() and not disable_zero_init:
             import deepspeed
 
             logger.info("Detected DeepSpeed ZeRO-3: activating zero.init() for this model")
@@ -3089,6 +3090,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
         adapter_kwargs = kwargs.pop("adapter_kwargs", {})
         adapter_name = kwargs.pop("adapter_name", "default")
         use_flash_attention_2 = kwargs.pop("use_flash_attention_2", False)
+        disable_zero_init = kwargs.pop("disable_zero_init", False)
 
         gguf_file = kwargs.pop("gguf_file", None)
         # Cache path to the GGUF file
@@ -3692,7 +3694,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
         # Instantiate model.
         init_contexts = [no_init_weights(_enable=_fast_init)]
 
-        if is_deepspeed_zero3_enabled() and not is_quantized:
+        if is_deepspeed_zero3_enabled() and not is_quantized and not disable_zero_init:
             import deepspeed
 
             logger.info("Detected DeepSpeed ZeRO-3: activating zero.init() for this model")
