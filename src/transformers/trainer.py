@@ -161,6 +161,7 @@ from .utils import (
     is_sagemaker_mp_enabled,
     is_torch_compile_available,
     is_torch_mlu_available,
+    is_torch_musa_available,
     is_torch_neuroncore_available,
     is_torch_npu_available,
     is_torch_xla_available,
@@ -224,6 +225,7 @@ if is_accelerate_available():
         GradientAccumulationPlugin,
         is_mlu_available,
         is_mps_available,
+        is_musa_available,
         is_npu_available,
         is_torch_version,
         is_xpu_available,
@@ -2869,6 +2871,17 @@ class Trainer:
                         f"Didn't manage to set back the RNG states of the MLU because of the following error:\n {e}"
                         "\nThis won't yield the same results as if the training had not been interrupted."
                     )
+        if is_torch_musa_available():
+            if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
+                torch.musa.set_rng_state_all(checkpoint_rng_state["musa"])
+            else:
+                try:
+                    torch.musa.set_rng_state(checkpoint_rng_state["musa"])
+                except Exception as e:
+                    logger.info(
+                        f"Didn't manage to set back the RNG states of the MUSA because of the following error:\n {e}"
+                        "\nThis won't yield the same results as if the training had not been interrupted."
+                    )
 
     def _save_checkpoint(self, model, trial, metrics=None):
         # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
@@ -2956,6 +2969,12 @@ class Trainer:
                 rng_states["mlu"] = torch.mlu.random.get_rng_state_all()
             else:
                 rng_states["mlu"] = torch.mlu.random.get_rng_state()
+
+        if is_torch_musa_available():
+            if self.args.parallel_mode == ParallelMode.DISTRIBUTED:
+                rng_states["musa"] = torch.musa.get_rng_state_all()
+            else:
+                rng_states["musa"] = torch.musa.get_rng_state()
 
         # A process can arrive here before the process 0 has a chance to save the model, in which case output_dir may
         # not yet exist.
@@ -3326,6 +3345,8 @@ class Trainer:
                 torch.xpu.empty_cache()
             elif is_mlu_available():
                 torch.mlu.empty_cache()
+            elif is_musa_available():
+                torch.musa.empty_cache()
             elif is_npu_available():
                 torch.npu.empty_cache()
             elif is_torch_version(">=", "2.0") and is_mps_available():

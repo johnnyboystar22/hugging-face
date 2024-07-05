@@ -45,6 +45,7 @@ from ..utils import (
     is_torch_cuda_available,
     is_torch_mlu_available,
     is_torch_mps_available,
+    is_torch_musa_available,
     is_torch_npu_available,
     is_torch_xpu_available,
     logging,
@@ -870,6 +871,8 @@ class Pipeline(_ScikitCompat, PushToHubMixin):
                 self.device = torch.device("cpu")
             elif is_torch_mlu_available():
                 self.device = torch.device(f"mlu:{device}")
+            elif is_torch_musa_available():
+                self.device = torch.device(f"musa:{device}")
             elif is_torch_cuda_available():
                 self.device = torch.device(f"cuda:{device}")
             elif is_torch_npu_available():
@@ -1038,6 +1041,9 @@ class Pipeline(_ScikitCompat, PushToHubMixin):
                     yield
             elif self.device.type == "mlu":
                 with torch.mlu.device(self.device):
+                    yield
+            elif self.device.type == "musa":
+                with torch.musa.device(self.device):
                     yield
             else:
                 yield
