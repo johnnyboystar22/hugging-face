@@ -2691,11 +2691,7 @@ class TrainingArguments:
         ```
         """
         self.save_strategy = SaveStrategy(strategy)
-<<<<<<< HEAD
         if self.save_strategy == SaveStrategy.STEPS and steps == 0:
-=======
-        if self.save_strategy == IntervalStrategy.STEPS and steps == 0:
->>>>>>> refs/remotes/origin/feat/new-best-save-strategy
             raise ValueError("Setting `strategy` as 'steps' requires a positive value for `steps`.")
         self.save_steps = steps
         self.save_total_limit = total_limit
