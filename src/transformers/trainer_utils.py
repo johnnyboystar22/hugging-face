@@ -224,6 +224,13 @@ class IntervalStrategy(ExplicitEnum):
     EPOCH = "epoch"
 
 
+class SaveStrategy(ExplicitEnum):
+    NO = "no"
+    STEPS = "steps"
+    EPOCH = "epoch"
+    BEST = "best"
+
+
 class EvaluationStrategy(ExplicitEnum):
     NO = "no"
     STEPS = "steps"
