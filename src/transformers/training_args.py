@@ -346,7 +346,7 @@ class TrainingArguments:
                 - `"no"`: No save is done during training.
                 - `"epoch"`: Save is done at the end of each epoch.
                 - `"steps"`: Save is done every `save_steps`.
-                - `"best"`: Save is done every time a new best metric is achieved.
+                - `"best"`: Save is done whenever a new `best_metric` is achieved.
 
                 If `"epoch"` or `"steps"` is chosen, saving will also be performed at the
                 very end of training, always.
@@ -2691,7 +2691,11 @@ class TrainingArguments:
         ```
         """
         self.save_strategy = SaveStrategy(strategy)
+<<<<<<< HEAD
         if self.save_strategy == SaveStrategy.STEPS and steps == 0:
+=======
+        if self.save_strategy == IntervalStrategy.STEPS and steps == 0:
+>>>>>>> refs/remotes/origin/feat/new-best-save-strategy
             raise ValueError("Setting `strategy` as 'steps' requires a positive value for `steps`.")
         self.save_steps = steps
         self.save_total_limit = total_limit
