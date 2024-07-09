@@ -6,7 +6,7 @@
     title: Quicktour
   - local: installation
     title: Installation
-- title: Pretrained models
+- title: Base classes
   sections:
   - title: Models
     isExpanded: false
@@ -42,15 +42,57 @@
       title: Summary of the tokenizers
     - local: pad_truncation
       title: Padding and truncation
-  - title: Deploy to production
+- title: Inference
+  sections:
+  - title: Pipeline API
     isExpanded: false
     sections:
-    - local: serialization
-      title: Export to ONNX
-    - local: tflite
-      title: Export to TFLite
-    - local: torchscript
-      title: Export to TorchScript
+    - local: pipeline_tutorial
+      title: Run inference with pipelines
+    - local: pipeline_webserver
+      title: Pipelines for webserver inference
+    - local: add_new_pipeline
+      title: How to add a pipeline to 🤗 Transformers?
+  - title: LLMs
+    isExpanded: false
+    sections:
+    - local: tasks/prompting
+      title: LLM prompting guide
+    - local: llm_optims
+      title: LLM inference optimization
+    - local: llm_tutorial
+      title: Generation with LLMs
+    - local: generation_strategies
+      title: Customize the generation strategy
+    - local: llm_tutorial_optimization
+      title: Getting the most out of LLMs
+    - local: perplexity
+      title: Perplexity of fixed-length models
+    - title: Chat models
+      sections:
+      - local: conversations
+        title: Chatting with Transformers
+      - local: chat_templating
+        title: Templates for chat models
+  - title: Framework-specific inference optimization
+    isExpanded: false
+    sections:
+    - local: tf_xla
+      title: XLA Integration for TensorFlow Models
+    - local: perf_torch_compile
+      title: Optimize inference using `torch.compile()`
+  - local: agents
+    title: Agents
+  - local: multilingual
+    title: Run inference with multilingual models
+  - local: gguf
+    title: Interoperability with GGUF files
+  - local: perf_infer_cpu
+    title: CPU inference
+  - local: perf_infer_gpu_one
+    title: GPU inference
+  - local: big_models
+    title: Instantiate a big model
 - title: Training
   sections:
   - title: Trainer API
@@ -98,60 +140,7 @@
     title: Debugging
   - local: model_memory_anatomy
     title: Model training anatomy
-- title: Inference
-  sections:
-  - title: Pipeline API
-    isExpanded: false
-    sections:
-    - local: pipeline_tutorial
-      title: Run inference with pipelines
-    - local: pipeline_webserver
-      title: Pipelines for webserver inference
-    - local: add_new_pipeline
-      title: How to add a pipeline to 🤗 Transformers?
-  - title: LLMs
-    isExpanded: false
-    sections:
-    - local: tasks/prompting
-      title: LLM prompting guide
-    - local: llm_optims
-      title: LLM inference optimization
-    - local: llm_tutorial
-      title: Generation with LLMs
-    - local: generation_strategies
-      title: Customize the generation strategy
-    - local: llm_tutorial_optimization
-      title: Getting the most out of LLMs
-    - local: perplexity
-      title: Perplexity of fixed-length models
-  - title: Chat models
-    isExpanded: false
-    sections:
-    - local: conversations
-      title: Chatting with Transformers
-    - local: chat_templating
-      title: Templates for chat models
-  - title: Framework-specific inference optimization
-    isExpanded: false
-    sections:
-    - local: tf_xla
-      title: XLA Integration for TensorFlow Models
-    - local: perf_torch_compile
-      title: Optimize inference using `torch.compile()`
-  - local: agents
-    title: Agents
-  - local: multilingual
-    title: Run inference with multilingual models
-  - local: gguf
-    title: Interoperability with GGUF files
-  - local: perf_infer_cpu
-    title: CPU inference
-  - local: perf_infer_gpu_one
-    title: GPU inference
-  - local: big_models
-    title: Instantiate a big model
 - title: Quantization
-  isExpanded: false
   sections:
   - local: quantization/overview
     title: Getting started
@@ -173,6 +162,14 @@
     title: Optimum
   - local: quantization/contribute
     title: Contribute new quantization method
+- title: Deploy to production
+  sections:
+  - local: serialization
+    title: Export to ONNX
+  - local: tflite
+    title: Export to TFLite
+  - local: torchscript
+    title: Export to TorchScript
 - title: Resources
   sections:
   - title: Task recipes
@@ -258,8 +255,10 @@
     title: Philosophy
   - local: glossary
     title: Glossary
-- sections:
-  - isExpanded: false
+- title: API
+  sections:
+  - title: Main classes
+    isExpanded: false
     sections:
     - local: main_classes/agent
       title: Agents and Tools
@@ -303,9 +302,10 @@
       title: Feature Extractor
     - local: main_classes/image_processor
       title: Image Processor
-    title: Main Classes
-  - sections:
-    - isExpanded: false
+  - title: Models
+    isExpanded: false
+    sections:
+    - title: Text models
       sections:
       - local: model_doc/albert
         title: ALBERT
@@ -577,8 +577,7 @@
         title: XLNet
       - local: model_doc/yoso
         title: YOSO
-      title: Text models
-    - isExpanded: false
+    - title: Vision models
       sections:
       - local: model_doc/beit
         title: BEiT
@@ -682,8 +681,7 @@
         title: ViTMSN
       - local: model_doc/yolos
         title: YOLOS
-      title: Vision models
-    - isExpanded: false
+    - title: Audio models
       sections:
       - local: model_doc/audio-spectrogram-transformer
         title: Audio Spectrogram Transformer
@@ -743,8 +741,7 @@
         title: XLS-R
       - local: model_doc/xlsr_wav2vec2
         title: XLSR-Wav2Vec2
-      title: Audio models
-    - isExpanded: false
+    - title: Video models
       sections:
       - local: model_doc/timesformer
         title: TimeSformer
@@ -752,8 +749,7 @@
         title: VideoMAE
       - local: model_doc/vivit
         title: ViViT
-      title: Video models
-    - isExpanded: false
+    - title: Multimodal models
       sections:
       - local: model_doc/align
         title: ALIGN
@@ -865,15 +861,13 @@
         title: VisualBERT
       - local: model_doc/xclip
         title: X-CLIP
-      title: Multimodal models
-    - isExpanded: false
+    - title: Reinforcement learning models
       sections:
       - local: model_doc/decision_transformer
         title: Decision Transformer
       - local: model_doc/trajectory_transformer
         title: Trajectory Transformer
-      title: Reinforcement learning models
-    - isExpanded: false
+    - title: Time series models
       sections:
       - local: model_doc/autoformer
         title: Autoformer
@@ -885,14 +879,12 @@
         title: PatchTST
       - local: model_doc/time_series_transformer
         title: Time Series Transformer
-      title: Time series models
-    - isExpanded: false
+    - title: Graph models
       sections:
       - local: model_doc/graphormer
         title: Graphormer
-      title: Graph models
-    title: Models
-  - isExpanded: false
+  - title: Internal helpers
+    isExpanded: false
     sections:
     - local: internal/modeling_utils
       title: Custom Layers and Utilities
@@ -912,5 +904,3 @@
       title: General Utilities
     - local: internal/time_series_utils
       title: Utilities for Time Series
-    title: Internal Helpers
-  title: API
