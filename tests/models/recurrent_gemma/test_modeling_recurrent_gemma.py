@@ -283,7 +283,7 @@ class RecurrentGemmaModelTester:
 @require_torch
 class RecurrentGemmaModelTest(ModelTesterMixin, GenerationTesterMixin, PipelineTesterMixin, unittest.TestCase):
     all_model_classes = (RecurrentGemmaForCausalLM,) if is_torch_available() else ()
-    # all_generative_model_classes = (RecurrentGemmaForCausalLM,) if is_torch_available() else () #TODO @gante not fully supported
+    all_generative_model_classes = (RecurrentGemmaForCausalLM,) if is_torch_available() else ()
     pipeline_model_mapping = (
         {
             "feature-extraction": RecurrentGemmaModel,
@@ -332,28 +332,8 @@ class RecurrentGemmaModelTest(ModelTesterMixin, GenerationTesterMixin, PipelineT
     def test_save_load_fast_init_from_base(self):
         pass
 
-    @unittest.skip(reason="RecurrentGemma does not return pkv")
-    def test_past_key_values_format(self):
-        pass
-
     @unittest.skip(reason="RecurrentGemma only supports sdpa")
     def test_eager_matches_sdpa_generate(self):
-        pass
-
-    @unittest.skip(reason="RecurrentGemma only supports sdpa")
-    def test_eager_matches_sdpa_inference(self):
-        pass
-
-    @unittest.skip(reason="RecurrentGemma does not return the cache")
-    def test_contrastive_generate_low_memory(self):
-        pass
-
-    @unittest.skip(reason="RecurrentGemma does not return the cache")
-    def test_contrastive_generate_dict_outputs_use_cache(self):
-        pass
-
-    @unittest.skip(reason="RecurrentGemma does not return the cache")
-    def test_contrastive_generate(self):
         pass
 
     @unittest.skip(reason="SQRBound is known to have issues with gc")
@@ -364,31 +344,11 @@ class RecurrentGemmaModelTest(ModelTesterMixin, GenerationTesterMixin, PipelineT
         return True  # Model does not return attention
 
     @unittest.skip(reason="Past key values are not returned")
-    def test_prompt_lookup_decoding_matches_greedy_search(self):
-        pass
-
-    @unittest.skip(reason="Past key values are not returned")
     def test_model_parallelism(self):
-        pass
-
-    @unittest.skip(reason="Past key values are not returned")
-    def test_model_parallel_beam_search(self):
         pass
 
     def _check_past_key_values_for_generate(self, *args, **kwargs):
         return True
-
-    @unittest.skip(reason="Rely on `past_key_values` to crop the assistant pkv. Not supported")
-    def test_assisted_decoding_matches_greedy_search(self):
-        pass
-
-    @unittest.skip(reason="RecurrentGemma's output different if you pad left or right. This is expected")
-    def test_left_padding_compatibility(self):
-        pass
-
-    @unittest.skip(reason="Relies on `past_key_values` returned by the model. Not supported with recurrent gemma")
-    def test_assisted_decoding_sample(self):
-        pass
 
     def _check_hidden_states_for_generate(
         self, batch_size, hidden_states, min_length, max_length, config, use_cache=False, num_beam_groups=1
@@ -413,6 +373,11 @@ class RecurrentGemmaModelTest(ModelTesterMixin, GenerationTesterMixin, PipelineT
     def test_initialization(self):
         pass
 
+    # We require non-empty prompts in recurrent gemma to detect prefill, but we have a corresponding exception
+    def test_generate_without_input_ids(self):
+        with self.assertRaises(ValueError):
+            super().test_generate_without_input_ids()
+
 
 @require_torch_gpu
 @slow
@@ -422,7 +387,20 @@ class RecurrentGemmaIntegrationTest(unittest.TestCase):
 
     @require_read_token
     def test_2b_generate(self):
-        EXPECTED_TEXTS = ['Hello I am doing a project on the topic of "The impact of the internet on the society" and I am looking for some information on the topic. I am looking for some information on the impact of the internet on the society. I am looking for some information on the impact of the internet on the society. I am looking for some', 'Hi today is a very good day for you. You will be able to do all the work you want to do. You will be able to do all the work you want to do. You will be able to do all the work you want to do. You will be able to do all the work you want to do.']  # fmt: skip
+        EXPECTED_TEXTS = [
+            (
+                'Hello I am doing a project on the topic of "The impact of the internet on the society" and I am '
+                "looking for some information on the topic. I am looking for some information on the impact of the "
+                "internet on the society. I am looking for some information on the impact of the internet on the "
+                "society. I am looking for some"
+            ),
+            (
+                "Hi today is a new app that allows you to make money by watching videos.\n\nThe app is very simple to "
+                "use and you can earn money by watching videos.\n\nThe app is available for both Android and iOS "
+                "devices and you can download it from the Google Play Store or the App Store.\n\nOnce you have "
+                "downloaded the app"
+            ),
+        ]
         model = AutoModelForCausalLM.from_pretrained(self.model_id, low_cpu_mem_usage=True).to(torch_device)
 
         tokenizer = AutoTokenizer.from_pretrained(self.model_id)
@@ -436,8 +414,20 @@ class RecurrentGemmaIntegrationTest(unittest.TestCase):
         self.assertEqual(output_text, EXPECTED_TEXTS)
 
         tokenizer.padding_side = "left"
-        EXPECTED_TEXTS = ['Hello I am doing a project on the topic of "The impact of the internet on the society" and I am looking for some information on the topic. I am looking for some information on the impact of the internet on the society. I am looking for some information on the impact of the internet on the society. I am looking for some', 'Hi today I am going to share with you the best <strong><em>free online video editing software</em></strong>.\n\n<h2><strong>Best Free Online Video Editing Software</strong></h2>\n\n<strong>1.</strong> <strong>Wondershare Filmora</strong>\n\nWondershare Filmora is a free online video editing software that is used to edit videos.']  # fmt: skip
-
+        EXPECTED_TEXTS = [
+            (
+                'Hello I am doing a project on the topic of "The impact of the internet on the society" and I am '
+                "looking for some information on the topic. I am looking for some information on the impact of the "
+                "internet on the society. I am looking for some information on the impact of the internet on the "
+                "society. I am looking for some"
+            ),
+            (
+                "Hi today I’m going to show you how to make a simple and easy to make a <strong>DIY</strong> "
+                "<strong>DIY</strong> <strong>DIY</strong> <strong>DIY</strong> <strong>DIY</strong> "
+                "<strong>DIY</strong> <strong>DIY</strong> <strong>DIY</strong> <strong>DIY</strong> "
+                "<strong>DIY</strong> <strong>DIY</strong> <strong>DIY"
+            ),
+        ]
         inputs = tokenizer(self.input_text, return_tensors="pt", padding=True).to(torch_device)
         output = model.generate(**inputs, max_new_tokens=64, do_sample=False)
         del model

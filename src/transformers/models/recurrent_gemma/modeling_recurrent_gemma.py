@@ -539,8 +539,7 @@ class RecurrentGemmaPreTrainedModel(PreTrainedModel):
     _skip_keys_device_placement = ["cache"]
     _supports_flash_attn_2 = False
     _supports_sdpa = False  # we can't compare with eager for now
-    _supports_cache_class = True
-    _supports_quantized_cache = True
+    _is_stateful = True
 
     def _init_weights(self, module):
         std = math.sqrt(self.config.w_init_variance_scale / self.config.conv1d_width)
@@ -818,6 +817,7 @@ class RecurrentGemmaForCausalLM(RecurrentGemmaPreTrainedModel):
         cache_position: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -855,6 +855,7 @@ class RecurrentGemmaForCausalLM(RecurrentGemmaPreTrainedModel):
         output_hidden_states = True
         outputs = self.model(
             input_ids=input_ids,
+            position_ids=position_ids,
             cache_position=cache_position,
             attention_mask=attention_mask,
             inputs_embeds=inputs_embeds,
@@ -895,37 +896,31 @@ class RecurrentGemmaForCausalLM(RecurrentGemmaPreTrainedModel):
             hidden_states=outputs.hidden_states,
         )
 
-    # Ignore copy
+    # Ignore copy (no past_key_values, no inputs_embeds)
     def prepare_inputs_for_generation(
-        self, input_ids, attention_mask=None, inputs_embeds=None, cache_position=None, use_cache=None, **kwargs
+        self, input_ids, attention_mask=None, cache_position=None, use_cache=None, position_ids=None, **kwargs
     ):
-        position_ids = kwargs.get("position_ids", None)
+        if cache_position.shape[0] == 1 and cache_position[0] == 0:
+            raise ValueError(
+                "Recurrent gemma doesn't work with an empty text prompt (i.e. only BOS token), as a minimum of two "
+                "tokens are needed to detect prefill. Please provide a non-empty text prompt."
+            )
+
+        # let's slice `input_ids` through `cache_position`, to keep only the unprocessed tokens
+        input_ids = input_ids[:, cache_position]
+
         if attention_mask is not None and position_ids is None:
             position_ids = attention_mask.long().cumsum(-1) - 1
             position_ids.masked_fill_(attention_mask == 0, 1)
+            position_ids = position_ids[:, -input_ids.shape[1] :]
 
-        attention_mask = attention_mask[:, -self.config.attention_window_size :]
-
-        past_length = cache_position[0]
-        if past_length > 0:
-            position_ids = position_ids[:, past_length:]
-
-        if inputs_embeds is not None:
-            model_inputs = {"inputs_embeds": inputs_embeds[:, past_length:]}
-        else:
-            model_inputs = {"input_ids": input_ids[:, past_length:].contiguous()}
-
-        if cache_position is not None:
-            cache_position = cache_position[-position_ids.shape[1] :]
-
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "attention_mask": attention_mask,
-                "cache_position": cache_position,
-                "use_cache": use_cache,
-            }
-        )
+        model_inputs = {
+            "input_ids": input_ids.contiguous(),
+            "position_ids": position_ids,
+            "attention_mask": attention_mask,
+            "cache_position": cache_position,
+            "use_cache": use_cache,
+        }
         return model_inputs
 
     # Ignore copy
