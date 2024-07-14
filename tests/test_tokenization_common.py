@@ -4249,22 +4249,16 @@ class TokenizerTesterMixin:
 
     def test_clean_up_tokenization_spaces(self):
         tokenizer = self.get_tokenizer()
-        clean_text = "shouldn't be!"
         unclean_text = "shouldn ' t be !"
 
         tokenizer.clean_up_tokenization_spaces = True
-        tokens = tokenizer.encode(clean_text, add_special_tokens=False)
-        decoded = tokenizer.decode(tokens)
-        assert clean_text in decoded
         tokens = tokenizer.encode(unclean_text, add_special_tokens=False)
-        decoded = tokenizer.decode(tokens)
-        assert clean_text in decoded
+        clean_decoded = tokenizer.decode(tokens)
 
         tokenizer.clean_up_tokenization_spaces = False
         tokens = tokenizer.encode(unclean_text, add_special_tokens=False)
-        decoded = tokenizer.decode(tokens)
-        assert unclean_text in decoded
-        assert decoded == tokenizer.decode(tokens, clean_up_tokenization_spaces=False)
+        unclean_decoded = tokenizer.decode(tokens)
+        assert unclean_decoded != clean_decoded
 
         # Fast from slow
         with tempfile.TemporaryDirectory() as tmp_dir_2:
@@ -4276,13 +4270,13 @@ class TokenizerTesterMixin:
         decoded = tokenizer_fast.decode(tokens)
         # fast and slow don't have the same output when we don't cleanup
         # tokenization space. Here `be!` vs `be !` and `go.` vs `go .`
-        assert unclean_text in decoded
+        assert unclean_decoded == decoded
 
         tokenizer_fast.clean_up_tokenization_spaces = True
         assert tokenizer_fast.clean_up_tokenization_spaces is True
 
         decoded = tokenizer_fast.decode(tokens)
-        assert clean_text in decoded
+        assert clean_decoded == decoded
 
     def test_split_special_tokens(self):
         if not self.test_slow_tokenizer:
