@@ -4247,51 +4247,42 @@ class TokenizerTesterMixin:
                     # Should not raise an error
                     self.rust_tokenizer_class.from_pretrained(tmp_dir_2)
 
-    # TODO This is ran for all models but only tests bert...
     def test_clean_up_tokenization_spaces(self):
-        tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
-        assert tokenizer.clean_up_tokenization_spaces is True
+        tokenizer = self.get_tokenizer()
+        clean_text = "shouldn't be!"
+        unclean_text = "shouldn ' t be !"
 
-        tokens = tokenizer.encode("This shouldn't be! He'll go.")
+        tokenizer.clean_up_tokenization_spaces = True
+        tokens = tokenizer.encode(clean_text, add_special_tokens=False)
         decoded = tokenizer.decode(tokens)
-        assert decoded == "[CLS] this shouldn't be! he'll go. [SEP]"
+        assert clean_text in decoded
+        tokens = tokenizer.encode(unclean_text, add_special_tokens=False)
+        decoded = tokenizer.decode(tokens)
+        assert clean_text in decoded
 
         tokenizer.clean_up_tokenization_spaces = False
+        tokens = tokenizer.encode(unclean_text, add_special_tokens=False)
         decoded = tokenizer.decode(tokens)
-        assert decoded == "[CLS] this shouldn ' t be ! he ' ll go . [SEP]"
+        assert unclean_text in decoded
         assert decoded == tokenizer.decode(tokens, clean_up_tokenization_spaces=False)
 
         # Fast from slow
         with tempfile.TemporaryDirectory() as tmp_dir_2:
             tokenizer.save_pretrained(tmp_dir_2)
-            tokenizer_fast = BertTokenizerFast.from_pretrained(tmp_dir_2)
+            tokenizer_fast = self.rust_tokenizer_class.from_pretrained(tmp_dir_2, from_slow=True)
             del tokenizer
 
         assert tokenizer_fast.clean_up_tokenization_spaces is False
         decoded = tokenizer_fast.decode(tokens)
         # fast and slow don't have the same output when we don't cleanup
         # tokenization space. Here `be!` vs `be !` and `go.` vs `go .`
-        assert decoded == "[CLS] this shouldn ' t be! he ' ll go. [SEP]"
+        assert unclean_text in decoded
 
         tokenizer_fast.clean_up_tokenization_spaces = True
         assert tokenizer_fast.clean_up_tokenization_spaces is True
 
         decoded = tokenizer_fast.decode(tokens)
-        assert decoded == "[CLS] this shouldn't be! he'll go. [SEP]"
-
-        # Slow from fast
-        with tempfile.TemporaryDirectory() as tmp_dir_2:
-            tokenizer_fast.clean_up_tokenization_spaces = False
-            tokenizer_fast.save_pretrained(tmp_dir_2)
-            tokenizer = BertTokenizer.from_pretrained(tmp_dir_2)
-
-        assert tokenizer.clean_up_tokenization_spaces is False
-        decoded = tokenizer.decode(tokens)
-        assert decoded == "[CLS] this shouldn ' t be ! he ' ll go . [SEP]"
-
-        tokenizer.clean_up_tokenization_spaces = True
-        decoded = tokenizer.decode(tokens)
-        assert decoded == "[CLS] this shouldn't be! he'll go. [SEP]"
+        assert clean_text in decoded
 
     def test_split_special_tokens(self):
         if not self.test_slow_tokenizer:
