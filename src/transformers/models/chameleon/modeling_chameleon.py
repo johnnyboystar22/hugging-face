@@ -1681,10 +1681,12 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
         elif self.multimodal_generation_mode == "text-only":
             logits_processor.append(
                 ChameleonTextOnlyLogitsProcessor(
+                    vocab_size=self.vocab_size,
                     image_token_ids=self.model.vocabulary_mapping.image_tokens,
                     max_length=generation_config.max_length,
                     image_start_token_id=self.model.vocabulary_mapping.image_start_token_id,
                     image_end_token_id=self.model.vocabulary_mapping.image_end_token_id,
+                    device=self.device,
                 )
             )
         else:
@@ -1696,6 +1698,7 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
                         eos_token_id=self.model.config.eos_token_id,
                         image_start_token_id=self.model.vocabulary_mapping.image_start_token_id,
                         image_end_token_id=self.model.vocabulary_mapping.image_end_token_id,
+                        device=self.device,
                         multimodal_generation_mode=self.multimodal_generation_mode,
                     ),
                     max_length=generation_config.max_length,
