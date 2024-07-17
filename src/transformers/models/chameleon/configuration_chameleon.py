@@ -179,9 +179,9 @@ class ChameleonConfig(PretrainedConfig):
             A dictionary containing the vocabulary map from the tokenizer. Used to obtain tokens from the image inputs.
         image_token_id (`int`, *optional*):
             The ID for the token used to represent the image in the input sequence.
-        boi_token_id (`int`, *optional*):
+        boi_token_id (`int`):
             Beginning of image token stream id.
-        eoi_token_id (`int`, *optional*):
+        eoi_token_id (`int`):
             End of image token stream id.
         mlp_bias (`bool`, *optional*, defaults to `False`):
             Whether to use a bias in up_proj, down_proj and gate_proj layers in the MLP layers.
@@ -239,8 +239,8 @@ class ChameleonConfig(PretrainedConfig):
         vq_config=None,
         vocabulary_map=None,
         image_token_id=None,
-        boi_token_id=None,
-        eoi_token_id=None,
+        boi_token_id=8197,
+        eoi_token_id=8196,
         mlp_bias=False,
         multimodal_generation_mode: Literal["text-only", "image-only", "interleaved-text-image", "free"] = "text-only",
         **kwargs,
