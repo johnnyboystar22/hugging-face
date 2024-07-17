@@ -781,7 +781,6 @@ def is_bitsandbytes_available():
     if not is_torch_available():
         return False
 
-
     return _bitsandbytes_available
 
 
