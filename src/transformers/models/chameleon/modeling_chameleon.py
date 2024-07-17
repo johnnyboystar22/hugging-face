@@ -16,7 +16,7 @@
 
 import math
 from functools import cached_property
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
