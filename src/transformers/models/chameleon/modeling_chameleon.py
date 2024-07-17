@@ -1679,6 +1679,7 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
     def __init__(self, config: ChameleonConfig):
         super().__init__(config)
         self.model = ChameleonModel(config)
+        self.vocabulary_mapping = self.model.vocabulary_mapping
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 

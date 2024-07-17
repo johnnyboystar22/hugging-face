@@ -23,6 +23,7 @@ from ...image_transforms import (
     get_resize_output_image_size,
     resize,
     to_channel_dimension_format,
+    to_pil_image,
 )
 from ...image_utils import (
     ChannelDimension,
@@ -389,21 +390,59 @@ class ChameleonImageProcessor(BaseImageProcessor):
         img_rgb = (1 - alpha[:, :, np.newaxis]) * 255 + alpha[:, :, np.newaxis] * img_rgba[:, :, :3]
         return PIL.Image.fromarray(img_rgb.astype("uint8"), "RGB")
 
-    def postprocess_pixel_values(self, pixel_values: np.ndarray) -> List[PIL.Image.Image]:
+    def postprocess_pixel_values(
+        self,
+        pixel_values: np.ndarray,
+        do_rescale: bool = None,
+        rescale_factor: float = None,
+        do_unnormalize: bool = None,
+        image_mean: Optional[Union[float, List[float]]] = None,
+        image_std: Optional[Union[float, List[float]]] = None,
+        input_data_format: Optional[Union[str, ChannelDimension]] = None,
+    ) -> List[PIL.Image.Image]:
         """
         Postprocess a batch of pixel values to images.
 
         Args:
             pixel_values (`np.ndarray` of shape `(batch_size, num_channels, image_size, image_size)`):
                 Batch of pixel values to postprocess in CHW format.
+            do_rescale (`bool`, *optional*, defaults to `self.do_rescale`):
+                Whether to rescale the image.
+            rescale_factor (`float`, *optional*, defaults to `self.rescale_factor`):
+                Rescale factor to rescale the image by if `do_rescale` is set to `True`.
+            do_unnormalize (`bool`, *optional*, defaults to `self.do_normalize`):
+                Whether to unnormalize the image.
+            image_mean (`float` or `List[float]`, *optional*, defaults to `self.image_mean`):
+                Image mean to use for unnormalization. Only has an effect if `do_unnormalize` is set to `True`.
+            image_std (`float` or `List[float]`, *optional*, defaults to `self.image_std`):
+                Image standard deviation to use for unnormalization. Only has an effect if `do_unnormalize` is set to
+                `True`.
+            input_data_format (`ChannelDimension` or `str`, *optional*):
+                The channel dimension format for the input image. If unset, the channel dimension format is inferred
+                from the input image. Can be one of:
+                - `"channels_first"` or `ChannelDimension.FIRST`: image in (num_channels, height, width) format.
+                - `"channels_last"` or `ChannelDimension.LAST`: image in (height, width, num_channels) format.
+                - `"none"` or `ChannelDimension.NONE`: image in (height, width) format.
 
         Returns:
             List[PIL.Image.Image]: A list of PIL images.
         """
-        # Normalize tensor to [0, 1] range from [-1, 1] range.
-        image_chw_normalized = (np.clip(pixel_values, -1.0, 1.0) + 1.0) / 2.0
-        # Move channel dimension to last dimension.
-        image_hwc = image_chw_normalized.transpose(0, 2, 3, 1)
-        # Scale to [0, 255] range and convert to uint8 (RGB format)
-        image_rgb_list = (image_hwc * 255).astype(np.uint8)
-        return [PIL.Image.fromarray(image_rgb, "RGB") for image_rgb in image_rgb_list]
+        do_rescale = do_rescale if do_rescale is not None else self.do_rescale
+        rescale_factor = rescale_factor if rescale_factor is not None else 1.0 / self.rescale_factor
+        do_unnormalize = do_unnormalize if do_unnormalize is not None else self.do_normalize
+        image_mean = image_mean if image_mean is not None else self.image_mean
+        image_std = image_std if image_std is not None else self.image_std
+        if input_data_format is None:
+            # We assume that all images have the same channel dimension format.
+            input_data_format = infer_channel_dimension_format(pixel_values[0])
+
+        if do_unnormalize:
+            pixel_values = self.unnormalize(
+                pixel_values, mean=image_mean, std=image_std, input_data_format=input_data_format
+            )
+
+        if do_rescale:
+            pixel_values = self.rescale(pixel_values, scale=rescale_factor, input_data_format=input_data_format)
+
+        images = np.clip(pixel_values, 0, 255).astype(np.uint8)
+        return [to_pil_image(image, input_data_format=input_data_format) for image in images]
