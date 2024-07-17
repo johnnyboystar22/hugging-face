@@ -177,6 +177,12 @@ class ChameleonConfig(PretrainedConfig):
             ChameleonVQConfig instance containing the configuration for the VQ-VAE model.
         vocabulary_map (`dict`, *optional*):
             A dictionary containing the vocabulary map from the tokenizer. Used to obtain tokens from the image inputs.
+        image_token_id (`int`):
+            The ID for the token used to represent the image in the input sequence.
+        boi_token_id (`int`):
+            Beginning of image token stream id.
+        eoi_token_id (`int`):
+            End of image token stream id.
         mlp_bias (`bool`, *optional*, defaults to `False`):
             Whether to use a bias in up_proj, down_proj and gate_proj layers in the MLP layers.
         multimodal_generation_mode (`Literal["text-only", "image-only", "interleaved-text-image", "free"]`, *optional*, defaults to `"text-only"`):
@@ -232,6 +238,9 @@ class ChameleonConfig(PretrainedConfig):
         swin_norm=False,
         vq_config=None,
         vocabulary_map=None,
+        image_token_id=None,
+        boi_token_id=None,
+        eoi_token_id=None,
         mlp_bias=False,
         multimodal_generation_mode: Literal["text-only", "image-only", "interleaved-text-image", "free"] = "text-only",
         **kwargs,
@@ -265,6 +274,9 @@ class ChameleonConfig(PretrainedConfig):
         self.vq_config = ChameleonVQVAEConfig(**vq_config)
 
         self.vocabulary_map = vocabulary_map
+        self.image_token_id = image_token_id
+        self.boi_token_id = boi_token_id
+        self.eoi_token_id = eoi_token_id
 
         super().__init__(
             pad_token_id=pad_token_id,

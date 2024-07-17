@@ -16,7 +16,7 @@
 
 import math
 from functools import cached_property
-from typing import Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -789,9 +789,7 @@ class ChameleonVQVAEVectorQuantizer(nn.Module):
         hidden_state_quant = self.embedding(image_tokens)
 
         # reshape back to match original input shape
-        hidden_state_quant = hidden_state_quant.view(
-            (batch_size, *self.quant_state_dims, emb_dim)
-        )
+        hidden_state_quant = hidden_state_quant.view((batch_size, *self.quant_state_dims, emb_dim))
         hidden_state_quant = hidden_state_quant.permute(0, 3, 1, 2).contiguous()
 
         return hidden_state_quant
@@ -1180,18 +1178,24 @@ class ChameleonImageVocabularyMapping:
     A class for mapping discrete image tokens from VQGAN to BPE tokens.
     """
 
-    def __init__(self, vocab_map):
+    def __init__(
+        self,
+        vocab_map: Dict[str, int],
+        image_token_id: int,
+        boi_token_id: int,
+        eoi_token_id: int,
+    ):
         self.vocab_map = vocab_map
-        self.image_token_id = vocab_map.get("<image>")
-        self.image_start_token_id = vocab_map.get("<racm3:break>")
-        self.image_end_token_id = vocab_map.get("<eoss>")
+        self.image_token_id = image_token_id
+        self.boi_token_id = boi_token_id
+        self.eoi_token_id = eoi_token_id
 
     @cached_property
     def val2name(self):
         return {v: k for k, v in self.vocab_map.items()}
 
     @cached_property
-    def image_tokens(self):
+    def image_token_ids(self):
         return sorted([val for name, val in self.vocab_map.items() if name.startswith("IMGIMG")])
 
     @cached_property
@@ -1201,7 +1205,7 @@ class ChameleonImageVocabularyMapping:
         def remap(old_name: str) -> str:
             return "".join(img_tkn_chr_mapping.get(c, c) for c in old_name[len("IMGIMG") : -1])
 
-        return {tok: int(remap(self.val2name[tok])) for tok in self.image_tokens}
+        return {tok: int(remap(self.val2name[tok])) for tok in self.image_token_ids}
 
     @cached_property
     def img2bpe(self):
@@ -1363,7 +1367,12 @@ class ChameleonModel(ChameleonPreTrainedModel):
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.vocabulary_mapping = ChameleonImageVocabularyMapping(config.vocabulary_map)
+        self.vocabulary_mapping = ChameleonImageVocabularyMapping(
+            config.vocabulary_map,
+            config.image_token_id,
+            config.boi_token_id,
+            config.eoi_token_id,
+        )
         decoder_layer = ChameleonDecoderLayer if not self.config.swin_norm else ChameleonSwinDecoderLayer
         self.layers = nn.ModuleList(
             [decoder_layer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
@@ -1685,10 +1694,10 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
             logits_processor.append(
                 ChameleonTextOnlyLogitsProcessor(
                     vocab_size=self.vocab_size,
-                    image_token_ids=self.model.vocabulary_mapping.image_tokens,
+                    image_token_ids=self.model.vocabulary_mapping.image_token_ids,
                     max_length=generation_config.max_length,
-                    image_start_token_id=self.model.vocabulary_mapping.image_start_token_id,
-                    image_end_token_id=self.model.vocabulary_mapping.image_end_token_id,
+                    boi_token_id=self.model.vocabulary_mapping.boi_token_id,
+                    eoi_token_id=self.model.vocabulary_mapping.eoi_token_id,
                     device=self.device,
                 )
             )
@@ -1697,10 +1706,10 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
                 ChameleonFSMLogitsProcessor(
                     fsm=ChameleonModalityFSMGuide(
                         all_token_ids=self.model.vocabulary_mapping.vocab_map.values(),
-                        image_token_ids=self.model.vocabulary_mapping.image_tokens,
+                        image_token_ids=self.model.vocabulary_mapping.image_token_ids,
                         eos_token_id=self.model.config.eos_token_id,
-                        image_start_token_id=self.model.vocabulary_mapping.image_start_token_id,
-                        image_end_token_id=self.model.vocabulary_mapping.image_end_token_id,
+                        boi_token_id=self.model.vocabulary_mapping.boi_token_id,
+                        eoi_token_id=self.model.vocabulary_mapping.eoi_token_id,
                         device=self.device,
                         multimodal_generation_mode=self.multimodal_generation_mode,
                     ),

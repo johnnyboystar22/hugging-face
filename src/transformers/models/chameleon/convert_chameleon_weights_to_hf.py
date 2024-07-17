@@ -369,6 +369,9 @@ def write_model(model_path, input_base_path, model_size, chameleon_version=1):
         swin_norm=swin_norm,
         vq_config=vq_config,
         vocabulary_map=vocabulary_map,
+        image_token_id=vocabulary_map["<image>"],
+        boi_token_id=vocabulary_map["<racm3:break>"],
+        eoi_token_id=vocabulary_map["<eoss>"],
     )
     with init_empty_weights():
         model = ChameleonForCausalLM(config)

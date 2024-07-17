@@ -60,52 +60,44 @@ class ChameleonModalityFSMGuide(Guide):
         eos_token_id: int,
         all_token_ids: List[int],
         image_token_ids: List[int],
-        image_start_token_id: int,
-        image_end_token_id: int,
+        boi_token_id: int,
+        eoi_token_id: int,
         device: torch.device = torch.device("cpu"),
         multimodal_generation_mode: Literal["text-only", "image-only", "interleaved-text-image", "free"] = "text-only",
     ):
         self.eos_token_id = eos_token_id
         self.all_token_ids = all_token_ids
         self.image_token_ids = image_token_ids
-        self.image_start_token_id = image_start_token_id
-        self.image_end_token_id = image_end_token_id
+        self.boi_token_id = boi_token_id
+        self.eoi_token_id = eoi_token_id
         self.multimodal_generation_mode = multimodal_generation_mode
         self.device = device
 
         self.text_token_ids: List[int] = [
             token_id
             for token_id in all_token_ids
-            if (token_id not in [image_start_token_id, image_end_token_id] and token_id not in image_token_ids)
+            if (token_id not in [boi_token_id, eoi_token_id] and token_id not in image_token_ids)
         ]
 
         if multimodal_generation_mode == "interleaved-text-image":
             self.states_to_token_maps = {
                 self.TEXT_STATE: (
-                    {token_id: self.TEXT_STATE for token_id in self.text_token_ids}
-                    | {image_start_token_id: self.IMAGE_STATE}
+                    {token_id: self.TEXT_STATE for token_id in self.text_token_ids} | {boi_token_id: self.IMAGE_STATE}
                 ),
                 self.IMAGE_STATE: (
-                    {token_id: self.IMAGE_STATE for token_id in image_token_ids}
-                    | {image_end_token_id: self.TEXT_STATE}
+                    {token_id: self.IMAGE_STATE for token_id in image_token_ids} | {eoi_token_id: self.TEXT_STATE}
                 ),
             }
         elif multimodal_generation_mode == "text-only":
             self.states_to_token_maps = {
-                self.TEXT_STATE: (
-                    {token_id: self.TEXT_STATE for token_id in self.text_token_ids}
-                    | {image_start_token_id: self.IMAGE_STATE}
-                ),
-                # "<image_start_token><image_start_token>" is allowed. But generating the image tokens is not.
-                self.IMAGE_STATE: {image_end_token_id: self.TEXT_STATE},
+                self.TEXT_STATE: {token_id: self.TEXT_STATE for token_id in self.text_token_ids}
             }
         elif multimodal_generation_mode == "image-only":
             self.states_to_token_maps = {
                 # Immediately transition to the image state
-                self.TEXT_STATE: {image_start_token_id: self.IMAGE_STATE},
+                self.TEXT_STATE: {boi_token_id: self.IMAGE_STATE},
                 self.IMAGE_STATE: (
-                    {token_id: self.IMAGE_STATE for token_id in image_token_ids}
-                    | {image_end_token_id: self.TEXT_STATE}
+                    {token_id: self.IMAGE_STATE for token_id in image_token_ids} | {eoi_token_id: self.TEXT_STATE}
                 ),
             }
         elif multimodal_generation_mode == "free":
@@ -234,14 +226,14 @@ class ChameleonFSMLogitsProcessor:
         if state == self.fsm.TEXT_STATE:
             # Don't start generating image tokens if we're going to run out of space
             if len(input_ids) + self.image_seq_length + 2 > self.max_length:
-                return allowed_tokens[allowed_tokens != self.fsm.image_start_token_id]
+                return allowed_tokens[allowed_tokens != self.fsm.boi_token_id]
         elif state == self.fsm.IMAGE_STATE:
             last_block = input_ids[-self.image_seq_length :]
             if len(last_block) < self.image_seq_length:
-                return allowed_tokens
+                return allowed_tokens[allowed_tokens != self.fsm.eoi_token_id]
             # If there are already `image_seq_length` image tokens, don't generate more
             if torch.all(torch.isin(last_block, self.image_token_ids_tensor.to(last_block.device))):
-                return torch.tensor([self.fsm.image_end_token_id])
+                return torch.tensor([self.fsm.eoi_token_id])
         return allowed_tokens
 
 
@@ -252,8 +244,8 @@ class ChameleonTextOnlyLogitsProcessor:
         self,
         image_token_ids: List[int],
         max_length: int,
-        image_start_token_id: int,
-        image_end_token_id: int,
+        boi_token_id: int,
+        eoi_token_id: int,
         vocab_size: int,
         device: torch.device = torch.device("cpu"),
     ):
@@ -263,19 +255,19 @@ class ChameleonTextOnlyLogitsProcessor:
             image_token_ids (`List[int]`): The image token ids, not including the start
                 and end image marker tokens.
             max_length (`int`): The maximum sequence length (prompt + generated tokens).
-            image_start_token_id (`int`): The start image marker token id.
-            image_end_token_id (`int`): The end image marker token id.
+            boi_token_id (`int`): The start image marker token id.
+            eoi_token_id (`int`): The end image marker token id.
             vocab_size (`int`): The number of tokens in the tokenizer's vocabulary.
             device (`torch.device`, *optional*, defaults to `torch.device("cpu")`): The device
                 on which to perform computations.
         """
         self.max_length = max_length
         self.image_token_ids = image_token_ids
-        self.image_start_token_id = image_start_token_id
-        self.image_end_token_id = image_end_token_id
+        self.boi_token_id = boi_token_id
+        self.eoi_token_id = eoi_token_id
         self.vocab_size = vocab_size
         self.image_end_token_mask = torch.zeros(vocab_size, device=device, dtype=torch.bool)
-        self.image_end_token_mask[self.image_end_token_id] = 1
+        self.image_end_token_mask[self.eoi_token_id] = 1
 
     def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
         """Masks image tokens
@@ -291,10 +283,9 @@ class ChameleonTextOnlyLogitsProcessor:
         """
         scores[:, self.image_token_ids] = torch.finfo(scores.dtype).min
         # Make sure that every image start token is always followed by an image end token
-        scores[
-            (input_ids[:, -1] == self.image_start_token_id).view(-1, 1).expand_as(scores)
-            & ~self.image_end_token_mask
-        ] = torch.finfo(scores.dtype).min
+        scores[(input_ids[:, -1] == self.boi_token_id).view(-1, 1).expand_as(scores) & ~self.image_end_token_mask] = (
+            torch.finfo(scores.dtype).min
+        )
         return scores
 
     def copy(self) -> "ChameleonTextOnlyLogitsProcessor":
@@ -302,7 +293,7 @@ class ChameleonTextOnlyLogitsProcessor:
         return ChameleonTextOnlyLogitsProcessor(
             image_token_ids=self.image_token_ids,
             max_length=self.max_length,
-            image_start_token_id=self.image_start_token_id,
-            image_end_token_id=self.image_end_token_id,
+            boi_token_id=self.boi_token_id,
+            eoi_token_id=self.eoi_token_id,
             vocab_size=self.vocab_size,
         )
