@@ -26,6 +26,7 @@ from ...processing_utils import ProcessorMixin
 from ...tokenization_utils_base import PaddingStrategy, PreTokenizedInput, TextInput, TruncationStrategy
 from ...utils import TensorType, is_vision_available
 
+
 if is_vision_available():
     import PIL
 

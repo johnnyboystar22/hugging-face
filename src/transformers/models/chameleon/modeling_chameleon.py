@@ -747,8 +747,8 @@ class ChameleonVQVAEVectorQuantizer(nn.Module):
         super().__init__()
         self.num_embeddings = config.num_embeddings
         self.embedding_dim = config.embed_dim
-        self.quant_state_dims = quant_state_dims
-        self.quant_state_flattened_dim = quant_state_dims[0] * quant_state_dims[1]
+        self.quant_state_dims = config.quant_state_dims
+        self.quant_state_flattened_dim = self.quant_state_dims[0] * self.quant_state_dims[1]
         self.beta = getattr(config, "beta", 0.25)
 
         self.embedding = nn.Embedding(self.num_embeddings, self.embedding_dim)
