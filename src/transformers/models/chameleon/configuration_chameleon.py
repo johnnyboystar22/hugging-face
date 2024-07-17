@@ -14,7 +14,7 @@
 # limitations under the License.
 """chameleon model configuration"""
 
-from typing import List, Literal
+from typing import List
 
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
