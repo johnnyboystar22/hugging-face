@@ -1419,6 +1419,46 @@ class ChameleonModel(ChameleonPreTrainedModel):
         image_tensor = self.vocabulary_mapping.convert_bpe2img(bpe_tokens)
         return self.vqmodel.decode(image_tensor)
 
+    def _get_logits_processor(
+        self,
+        generation_config: GenerationConfig,
+        logits_processor: Optional[LogitsProcessorList],
+        **kwargs,
+    ) -> LogitsProcessorList:
+        if logits_processor is None:
+            logits_processor = LogitsProcessorList()
+        if generation_config.multimodal_generation_mode == "free":
+            return super()._get_logits_processor(
+                generation_config=generation_config,
+                logits_processor=logits_processor,
+                **kwargs,
+            )
+        elif generation_config.multimodal_generation_mode == "text-only":
+            logits_processor.append(
+                SuppressTokensLogitsProcessor(
+                    suppress_tokens=self.vocabulary_mapping.image_token_ids
+                    + [
+                        self.vocabulary_mapping.boi_token_id,
+                        self.vocabulary_mapping.eoi_token_id,
+                    ],
+                    device=self.device,
+                )
+            )
+        elif generation_config.multimodal_generation_mode == "image-only":
+            # TODO: Implement image-only generation
+            raise NotImplementedError("Image-only generation is not supported yet.")
+        elif generation_config.multimodal_generation_mode == "interleaved-text-image":
+            raise NotImplementedError("Interleaved text-image generation is not supported.")
+        else:
+            raise ValueError(
+                f"Unknown multimodal generation mode: {generation_config.multimodal_generation_mode}. Please choose one of 'free', 'text-only', 'image-only', or 'interleaved-text-image'."
+            )
+        return super()._get_logits_processor(
+            generation_config=generation_config,
+            logits_processor=logits_processor,
+            **kwargs,
+        )
+
     @add_start_docstrings_to_model_forward(CHAMELEON_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
         checkpoint=_CHECKPOINT_FOR_DOC,
@@ -1663,53 +1703,8 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
     def get_decoder(self):
         return self.model
 
-    @property
-    def multimodal_generation_mode(self):
-        return self.model.config.multimodal_generation_mode
-
-    @multimodal_generation_mode.setter
-    def multimodal_generation_mode(self, value):
-        self.model.config.multimodal_generation_mode = value
-
-    def _get_logits_processor(
-        self,
-        generation_config: GenerationConfig,
-        logits_processor: Optional[LogitsProcessorList],
-        **kwargs,
-    ) -> LogitsProcessorList:
-        if logits_processor is None:
-            logits_processor = LogitsProcessorList()
-        if self.multimodal_generation_mode == "free":
-            return super()._get_logits_processor(
-                generation_config=generation_config,
-                logits_processor=logits_processor,
-                **kwargs,
-            )
-        elif self.multimodal_generation_mode == "text-only":
-            logits_processor.append(
-                SuppressTokensLogitsProcessor(
-                    suppress_tokens=self.model.vocabulary_mapping.image_token_ids
-                    + [
-                        self.model.vocabulary_mapping.boi_token_id,
-                        self.model.vocabulary_mapping.eoi_token_id,
-                    ],
-                    device=self.device,
-                )
-            )
-        elif self.multimodal_generation_mode == "image-only":
-            # TODO: Implement image-only generation
-            raise NotImplementedError("Image-only generation is not supported yet.")
-        elif self.multimodal_generation_mode == "interleaved-text-image":
-            raise NotImplementedError("Interleaved text-image generation is not supported.")
-        else:
-            raise ValueError(
-                f"Unknown multimodal generation mode: {self.multimodal_generation_mode}. Please choose one of 'free', 'text-only', 'image-only', or 'interleaved-text-image'."
-            )
-        return super()._get_logits_processor(
-            generation_config=generation_config,
-            logits_processor=logits_processor,
-            **kwargs,
-        )
+    def _get_logits_processor(self, **kwargs) -> LogitsProcessorList:
+        return self.model._get_logits_processor(**kwargs)
 
     @add_start_docstrings_to_model_forward(CHAMELEON_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)

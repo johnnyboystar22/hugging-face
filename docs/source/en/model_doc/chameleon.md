@@ -144,12 +144,13 @@ prompt = "Generate an image of a snowman."
 # Preprocess the prompt
 inputs = processor(prompt, return_tensors="pt", padding=True).to(model.device)
 
-# Set the multimodal generation mode to `image-only` to force the model to only generate image tokens.
-model.multimodal_generation_mode="image-only"
-
 # Generate discrete image tokens
 # Note: We need to set `max_new_tokens` to 1026 since the model generates the `image_start_token` marker token first, then 1024 image tokens, and finally the `image_end_token` marker token.
-generate_ids = model.generate(**inputs, max_new_tokens=1026)
+generate_ids = model.generate(
+    **inputs,
+    multimodal_generation_mode="image-only",
+    max_new_tokens=1026,
+)
 
 # Decode the generated image tokens
 pixel_values = model.decode_image_tokens(generate_ids[, 1:-1])
@@ -187,12 +188,13 @@ prompt = "Generate a variation of this image.<image>"
 # Preprocess the prompt
 inputs = processor(prompt, images=[image_snowman], return_tensors="pt", padding=True).to(model.device)
 
-# Set the multimodal generation mode to `image-only` to force the model to only generate image tokens.
-model.multimodal_generation_mode="image-only"
-
 # Generate discrete image tokens
 # Note: We need to set `max_new_tokens` to 1026 since the model generates the `image_start_token` marker token first, then 1024 image tokens, and finally the `image_end_token` marker token.
-generate_ids = model.generate(**inputs, max_new_tokens=1026)
+generate_ids = model.generate(
+    **inputs,
+    multimodal_generation_mode="image-only",
+    max_new_tokens=1026,
+)
 
 # Decode the generated image tokens
 pixel_values = model.decode_image_tokens(generate_ids[, 1:-1])

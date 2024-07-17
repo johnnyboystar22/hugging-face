@@ -179,22 +179,12 @@ class ChameleonConfig(PretrainedConfig):
             A dictionary containing the vocabulary map from the tokenizer. Used to obtain tokens from the image inputs.
         image_token_id (`int`, *optional*):
             The ID for the token used to represent the image in the input sequence.
-        boi_token_id (`int`):
+        boi_token_id (`int`, *optional*, defaults to 8197):
             Beginning of image token stream id.
-        eoi_token_id (`int`):
+        eoi_token_id (`int`, *optional*, defaults to 8196):
             End of image token stream id.
         mlp_bias (`bool`, *optional*, defaults to `False`):
             Whether to use a bias in up_proj, down_proj and gate_proj layers in the MLP layers.
-        multimodal_generation_mode (`Literal["text-only", "image-only", "interleaved-text-image", "free"]`, *optional*, defaults to `"text-only"`):
-            Chameleon can generate text, images, or both in an interleaved manner. However, only text generation is
-            supported by the official model checkpoint. This flag enables the other modes for use with finetuned versions of
-            the model such as [Anole](https://arxiv.org/abs/2407.06135).
-            - If set to `"text-only"`, the logits for the image tokens will be masked out during generation. However, the
-            `image_start_token` and `image_end_token` markers will be left as-is.
-            - If set to `"image-only"`, the logits for tokens other than the image tokens, and the `image_start_token`,
-            `image_end_token`, `image_token` markers will be masked out during generation.
-            - For `"interleaved-text-image"`, Chameleon implements a finite state machine to dynamically switch between text and image modalities.
-            - If set to `"free"`, the logits are left as-is.
 
 
     ```python
@@ -242,7 +232,6 @@ class ChameleonConfig(PretrainedConfig):
         boi_token_id=8197,
         eoi_token_id=8196,
         mlp_bias=False,
-        multimodal_generation_mode: Literal["text-only", "image-only", "interleaved-text-image", "free"] = "text-only",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -252,7 +241,6 @@ class ChameleonConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.mlp_bias = mlp_bias
-        self.multimodal_generation_mode = multimodal_generation_mode
 
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
