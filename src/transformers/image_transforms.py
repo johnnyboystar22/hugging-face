@@ -418,17 +418,17 @@ def unnormalize(
     input_data_format: Optional[Union[str, ChannelDimension]] = None,
 ) -> np.ndarray:
     """
-    Normalizes `image` using the mean and standard deviation specified by `mean` and `std`.
+    Unnormalizes `image` using the mean and standard deviation specified by `mean` and `std`.
 
-    image = (image - mean) / std
+    image = (image * std) + mean
 
     Args:
         image (`np.ndarray`):
             The image to normalize.
         mean (`float` or `Iterable[float]`):
-            The mean to use for normalization.
+            The mean to use for unnormalization.
         std (`float` or `Iterable[float]`):
-            The standard deviation to use for normalization.
+            The standard deviation to use for unnormalization.
         data_format (`ChannelDimension`, *optional*):
             The channel dimension format of the output image. If unset, will use the inferred format from the input.
         input_data_format (`ChannelDimension`, *optional*):
