@@ -123,13 +123,6 @@ else:
                 ),
             ),
             (
-                "msclap",
-                (
-                    "MSClapTokenizer",
-                    "MSClapTokenizerFast" if is_tokenizers_available() else None,
-                ),
-            ), 
-            (
                 "clip",
                 (
                     "CLIPTokenizer",
@@ -314,6 +307,13 @@ else:
             ("mpnet", ("MPNetTokenizer", "MPNetTokenizerFast" if is_tokenizers_available() else None)),
             ("mpt", (None, "GPTNeoXTokenizerFast" if is_tokenizers_available() else None)),
             ("mra", ("RobertaTokenizer", "RobertaTokenizerFast" if is_tokenizers_available() else None)),
+            (
+                "msclap",
+                (
+                    "MSClapTokenizer",
+                    "MSClapTokenizerFast" if is_tokenizers_available() else None,
+                ),
+            ),
             (
                 "mt5",
                 (

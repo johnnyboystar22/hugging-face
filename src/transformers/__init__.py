@@ -267,12 +267,6 @@ _import_structure = {
         "ClapProcessor",
         "ClapTextConfig",
     ],
-    "models.msclap": [
-        "MSClapAudioConfig",
-        "MSClapConfig",
-        "MSClapProcessor",
-        "MSClapTextConfig",
-    ],
     "models.clip": [
         "CLIPConfig",
         "CLIPProcessor",
@@ -587,6 +581,12 @@ _import_structure = {
     ],
     "models.mpt": ["MptConfig"],
     "models.mra": ["MraConfig"],
+    "models.msclap": [
+        "MSClapAudioConfig",
+        "MSClapConfig",
+        "MSClapProcessor",
+        "MSClapTextConfig",
+    ],
     "models.mt5": ["MT5Config"],
     "models.musicgen": [
         "MusicgenConfig",
@@ -1651,17 +1651,6 @@ else:
             "ClapTextModelWithProjection",
         ]
     )
-    _import_structure["models.msclap"].extend(
-        [
-            "MSClapAudioModel",
-            "MSClapAudioModelWithProjection",
-            "MSClapFeatureExtractor",
-            "MSClapModel",
-            "MSClapPreTrainedModel",
-            "MSClapTextModel",
-            "MSClapTextModelWithProjection",
-        ]
-    )
     _import_structure["models.clip"].extend(
         [
             "CLIPForImageClassification",
@@ -2714,6 +2703,17 @@ else:
             "MraForTokenClassification",
             "MraModel",
             "MraPreTrainedModel",
+        ]
+    )
+    _import_structure["models.msclap"].extend(
+        [
+            "MSClapAudioModel",
+            "MSClapAudioModelWithProjection",
+            "MSClapFeatureExtractor",
+            "MSClapModel",
+            "MSClapPreTrainedModel",
+            "MSClapTextModel",
+            "MSClapTextModelWithProjection",
         ]
     )
     _import_structure["models.mt5"].extend(
@@ -4943,12 +4943,6 @@ if TYPE_CHECKING:
         ClapProcessor,
         ClapTextConfig,
     )
-    from .models.msclap import (
-        MSClapAudioConfig,
-        MSClapConfig,
-        MSClapProcessor,
-        MSClapTextConfig,
-    )
     from .models.clip import (
         CLIPConfig,
         CLIPProcessor,
@@ -5293,6 +5287,12 @@ if TYPE_CHECKING:
     )
     from .models.mpt import MptConfig
     from .models.mra import MraConfig
+    from .models.msclap import (
+        MSClapAudioConfig,
+        MSClapConfig,
+        MSClapProcessor,
+        MSClapTextConfig,
+    )
     from .models.mt5 import MT5Config
     from .models.musicgen import (
         MusicgenConfig,
@@ -6326,15 +6326,6 @@ if TYPE_CHECKING:
             ClapTextModel,
             ClapTextModelWithProjection,
         )
-        from .models.msclap import (
-            MSClapAudioModel,
-            MSClapAudioModelWithProjection,
-            MSClapFeatureExtractor,
-            MSClapModel,
-            MSClapPreTrainedModel,
-            MSClapTextModel,
-            MSClapTextModelWithProjection,
-        )
         from .models.clip import (
             CLIPForImageClassification,
             CLIPModel,
@@ -7178,6 +7169,15 @@ if TYPE_CHECKING:
             MraForTokenClassification,
             MraModel,
             MraPreTrainedModel,
+        )
+        from .models.msclap import (
+            MSClapAudioModel,
+            MSClapAudioModelWithProjection,
+            MSClapFeatureExtractor,
+            MSClapModel,
+            MSClapPreTrainedModel,
+            MSClapTextModel,
+            MSClapTextModelWithProjection,
         )
         from .models.mt5 import (
             MT5EncoderModel,
