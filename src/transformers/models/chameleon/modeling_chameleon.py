@@ -1431,14 +1431,10 @@ class ChameleonModel(ChameleonPreTrainedModel):
     ) -> LogitsProcessorList:
         if logits_processor is None:
             logits_processor = LogitsProcessorList()
-        if generation_config.multimodal_generation_mode == "free":
-            return super()._get_logits_processor(
-                generation_config=generation_config,
-                input_ids_seq_length=input_ids_seq_length,
-                logits_processor=logits_processor,
-                **kwargs,
-            )
-        elif generation_config.multimodal_generation_mode == "text-only":
+        if (
+            generation_config.multimodal_generation_mode is None
+            or generation_config.multimodal_generation_mode == "text-only"
+        ):
             logits_processor.append(
                 SuppressTokensLogitsProcessor(
                     suppress_tokens=self.vocabulary_mapping.image_token_ids
@@ -1461,6 +1457,8 @@ class ChameleonModel(ChameleonPreTrainedModel):
                     max_new_tokens=generation_config.max_new_tokens,
                 )
             )
+        elif generation_config.multimodal_generation_mode == "free":
+            pass
         elif generation_config.multimodal_generation_mode == "interleaved-text-image":
             raise NotImplementedError("Interleaved text-image generation is not supported.")
         else:
