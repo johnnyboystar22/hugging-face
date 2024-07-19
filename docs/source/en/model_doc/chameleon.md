@@ -206,65 +206,6 @@ images = processor.postprocess_pixel_values(
 images[0].save("snowman.png")
 ```
 
-### Interleaved image and text generation
-
-Chameleon implements a simple state machine to dynamically switch between text and image generation modes. This is not natively supported by Transformers yet.
-
-```bash
-pip install mmsg
-```
-
-```python
-import requests
-from PIL import Image
-
-import torch
-from mmsg.integrations.chameleon_logits_processor import (
-    ChameleonFSMLogitsProcessor,
-    ChameleonModalityFSMGuide,
-)
-from transformers import ChameleonProcessor, ChameleonForCausalLM
-
-processor = ChameleonProcessor.from_pretrained("leloy/Anole-7b-v0.1-hf")
-model = ChameleonForCausalLM.from_pretrained(
-    "leloy/Anole-7b-v0.1-hf",
-    device_map="auto",
-)
-
-# Get image of a snowman
-url = "https://huggingface.co/microsoft/kosmos-2-patch14-224/resolve/main/snowman.jpg"
-image_snowman = Image.open(requests.get(url, stream=True).raw)
-
-# Prepare a prompt
-prompt = "Generate a variation of this image and describe the changes you made.<image>"
-
-# Preprocess the prompt
-inputs = processor(prompt, images=[image_snowman], return_tensors="pt", padding=True).to(model.device)
-
-logits_processor = LogitsProcessorList([
-    ChameleonFSMLogitsProcessor(
-        fsm=ChameleonModalityFSMGuide(
-            all_token_ids=model.vocabulary_mapping.vocab_map.values(),
-            image_token_ids=model.vocabulary_mapping.image_token_ids,
-            eos_token_id=model.config.eos_token_id,
-            boi_token_id=model.vocabulary_mapping.boi_token_id,
-            eoi_token_id=model.vocabulary_mapping.eoi_token_id,
-            device=model.device,
-            multimodal_generation_mode="interleaved-text-image",
-        ),
-        max_length=max_length,
-    )
-])
-
-# Generate discrete image tokens
-# Note: We need to set `max_new_tokens` to 1026 since the model generates the `image_start_token` marker token first, then 1024 image tokens, and finally the `image_end_token` marker token.
-generate_ids = model.generate(
-    **inputs,
-    multimodal_generation_mode="free",
-    max_new_tokens=2000,
-)
-```
-
 ## Model optimization
 
 ### Quantization using Bitsandbytes
