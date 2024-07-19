@@ -178,4 +178,4 @@ class ChameleonProcessor(ProcessorMixin):
         Returns:
             List[PIL.Image.Image]: A list of PIL images.
         """
-        return self.image_processor.postprocess_pixel_values(pixel_values)
+        return self.image_processor.postprocess(pixel_values)

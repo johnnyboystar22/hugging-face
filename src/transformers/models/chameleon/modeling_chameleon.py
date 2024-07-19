@@ -46,6 +46,7 @@ from ...utils import (
     replace_return_docstrings,
 )
 from .configuration_chameleon import ChameleonConfig, ChameleonVQVAEConfig
+from .logits_process_chameleon import ChameleonImageOnlyLogitsProcessor
 
 
 if is_flash_attn_2_available():
@@ -1129,7 +1130,7 @@ class ChameleonVQVAE(PreTrainedModel):
         self.post_quant_conv = torch.nn.Conv2d(config.embed_dim, config.latent_channels, 1)
         self.eval()  # Chameleon's VQ model is frozen
 
-    def encode(self, pixel_values: torch.FloatTensor):
+    def encode(self, pixel_values: torch.FloatTensor) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.LongTensor]:
         """
         Encodes pixel values into quantized tokens.
 
@@ -1150,7 +1151,7 @@ class ChameleonVQVAE(PreTrainedModel):
         quant, emb_loss, indices = self.quantize(hidden_states)
         return quant, emb_loss, indices
 
-    def decode(self, image_tokens: torch.Tensor):
+    def decode(self, image_tokens: torch.LongTensor) -> torch.FloatTensor:
         """
         Decodes quantized token IDs into pixel values.
 
@@ -1414,6 +1415,8 @@ class ChameleonModel(ChameleonPreTrainedModel):
         Returns:
             `torch.Tensor` of shape `(batch, num_channels, 512, 512)`:
         """
+        if not torch.is_tensor(bpe_tokens):
+            bpe_tokens = torch.tensor(bpe_tokens, device=self.device)
         if bpe_tokens.shape[1] != self.vqmodel.quantize.quant_state_flattened_dim:
             raise ValueError(f"All batches must have {self.vqmodel.quantize.quant_state_flattened_dim} tokens.")
         image_tensor = self.vocabulary_mapping.convert_bpe2img(bpe_tokens)
@@ -1422,6 +1425,7 @@ class ChameleonModel(ChameleonPreTrainedModel):
     def _get_logits_processor(
         self,
         generation_config: GenerationConfig,
+        input_ids_seq_length: int,
         logits_processor: Optional[LogitsProcessorList],
         **kwargs,
     ) -> LogitsProcessorList:
@@ -1430,6 +1434,7 @@ class ChameleonModel(ChameleonPreTrainedModel):
         if generation_config.multimodal_generation_mode == "free":
             return super()._get_logits_processor(
                 generation_config=generation_config,
+                input_ids_seq_length=input_ids_seq_length,
                 logits_processor=logits_processor,
                 **kwargs,
             )
@@ -1445,8 +1450,17 @@ class ChameleonModel(ChameleonPreTrainedModel):
                 )
             )
         elif generation_config.multimodal_generation_mode == "image-only":
-            # TODO: Implement image-only generation
-            raise NotImplementedError("Image-only generation is not supported yet.")
+            logits_processor.append(
+                ChameleonImageOnlyLogitsProcessor(
+                    eos_token_id=generation_config.eos_token_id,
+                    boi_token_id=self.vocabulary_mapping.boi_token_id,
+                    eoi_token_id=self.vocabulary_mapping.eoi_token_id,
+                    image_token_ids=self.vocabulary_mapping.image_token_ids,
+                    image_seq_length=self.vqmodel.quantize.quant_state_flattened_dim,
+                    begin_index=input_ids_seq_length,
+                    max_new_tokens=generation_config.max_new_tokens,
+                )
+            )
         elif generation_config.multimodal_generation_mode == "interleaved-text-image":
             raise NotImplementedError("Interleaved text-image generation is not supported.")
         else:
@@ -1455,6 +1469,7 @@ class ChameleonModel(ChameleonPreTrainedModel):
             )
         return super()._get_logits_processor(
             generation_config=generation_config,
+            input_ids_seq_length=input_ids_seq_length,
             logits_processor=logits_processor,
             **kwargs,
         )
