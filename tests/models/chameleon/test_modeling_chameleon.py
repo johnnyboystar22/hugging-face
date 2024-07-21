@@ -141,9 +141,9 @@ class ChameleonModelTester:
         start = self.vq_img_token_start_id
         end = self.vq_img_token_start_id + self.vq_num_embeds
         for i in range(start, end):
-            image_token_suffix = "".join(chr(ord("A") + int(c)) for c in str(i))
+            image_token_infix = "".join(chr(ord("A") + int(c)) for c in str(i))
             # dummy str for each image token, anything starting with IMGIMG
-            vocab_map[i] = f"IMGIMGBS{image_token_suffix}"
+            vocab_map[i] = f"IMGIMG{image_token_infix}Z"
 
         return ChameleonConfig(
             vocab_size=self.vocab_size,
