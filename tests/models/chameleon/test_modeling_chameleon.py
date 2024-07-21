@@ -61,6 +61,8 @@ class ChameleonModelTester:
         use_labels=True,
         vocab_size=99,
         image_token_id=98,
+        boi_token_id=97,
+        eoi_token_id=96,
         hidden_size=32,
         num_hidden_layers=2,
         num_attention_heads=2,
@@ -90,6 +92,8 @@ class ChameleonModelTester:
         self.use_labels = use_labels
         self.vocab_size = vocab_size
         self.image_token_id = image_token_id
+        self.boi_token_id = boi_token_id
+        self.eoi_token_id = eoi_token_id
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
@@ -162,6 +166,9 @@ class ChameleonModelTester:
             pad_token_id=self.pad_token_id,
             vocabulary_map={v: k for k, v in vocab_map.items()},
             vq_config=self.get_vq_config(),
+            image_token_id=self.image_token_id,
+            boi_token_id=self.boi_token_id,
+            eoi_token_id=self.eoi_token_id,
         )
 
     def get_vq_config(self):
