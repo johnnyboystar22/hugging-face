@@ -18,7 +18,7 @@ import copy
 import inspect
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -124,6 +124,8 @@ NEED_SETUP_CACHE_CLASSES_MAPPING = {
     "mamba": MambaCache,
 }
 QUANT_BACKEND_CLASSES_MAPPING = {"quanto": QuantoQuantizedCache, "HQQ": HQQQuantizedCache}
+
+GenerationConfigType = TypeVar("GenerationConfigType", bound=GenerationConfig)
 
 
 @dataclass
@@ -1297,13 +1299,13 @@ class GenerationMixin:
 
     def _prepare_generated_length(
         self,
-        generation_config,
-        has_default_max_length,
-        has_default_min_length,
-        model_input_name,
-        input_ids_length,
-        inputs_tensor,
-    ):
+        generation_config: GenerationConfigType,
+        has_default_max_length: bool,
+        has_default_min_length: bool,
+        model_input_name: str,
+        input_ids_length: int,
+        inputs_tensor: torch.Tensor,
+    ) -> GenerationConfigType:
         """Prepared max and min length in generaion configs to avoid clashes between similar attributes"""
 
         if generation_config.max_new_tokens is not None:
@@ -1346,8 +1348,8 @@ class GenerationMixin:
         return generation_config
 
     def _prepare_generation_config(
-        self, generation_config: Optional[GenerationConfig], **kwargs: Dict
-    ) -> Tuple[GenerationConfig, Dict]:
+        self, generation_config: Optional[GenerationConfigType], **kwargs: Dict
+    ) -> Tuple[GenerationConfigType, Dict]:
         """
         Prepares the base generation config, then applies any generation configuration options from kwargs.
         """

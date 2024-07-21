@@ -26,8 +26,14 @@ from torch.nn import CrossEntropyLoss
 
 from ...activations import ACT2FN
 from ...cache_utils import Cache, StaticCache
-from ...generation.logits_process import LogitsProcessorList, SuppressTokensLogitsProcessor
-from ...generation.utils import GenerationConfig
+from ...generation.logits_process import (
+    AllowOnlyTokensAtRelativeOffsetLogitsProcessor,
+    AllowOnlyTokensInRelativeWindowLogitsProcessor,
+    LogitsProcessorList,
+    SuppressTokensInIndexRangeLogitsProcessor,
+    SuppressTokensLogitsProcessor,
+)
+from ...generation.utils import GenerateOutput
 from ...modeling_attn_mask_utils import AttentionMaskConverter
 from ...modeling_flash_attention_utils import _flash_attention_forward
 from ...modeling_outputs import (
@@ -46,7 +52,7 @@ from ...utils import (
     replace_return_docstrings,
 )
 from .configuration_chameleon import ChameleonConfig, ChameleonVQVAEConfig
-from .logits_process_chameleon import ChameleonImageOnlyLogitsProcessor
+from .generation_configuration_chameleon import ChameleonGenerationConfig
 
 
 if is_flash_attn_2_available():
@@ -1245,6 +1251,7 @@ CHAMELEON_START_DOCSTRING = r"""
 )
 class ChameleonPreTrainedModel(PreTrainedModel):
     config_class = ChameleonConfig
+    generation_config_class = ChameleonGenerationConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
     _no_split_modules = ["ChameleonDecoderLayer", "ChameleonSwinDecoderLayer"]
@@ -1422,56 +1429,6 @@ class ChameleonModel(ChameleonPreTrainedModel):
             raise ValueError(f"All batches must have {self.vqmodel.quantize.quant_state_flattened_dim} tokens.")
         image_tensor = self.bpe2img_mapping_tensor[bpe_tokens]
         return self.vqmodel.decode(image_tensor)
-
-    def _get_logits_processor(
-        self,
-        generation_config: GenerationConfig,
-        input_ids_seq_length: int,
-        logits_processor: Optional[LogitsProcessorList],
-        **kwargs,
-    ) -> LogitsProcessorList:
-        if logits_processor is None:
-            logits_processor = LogitsProcessorList()
-        if (
-            generation_config.multimodal_generation_mode is None
-            or generation_config.multimodal_generation_mode == "text-only"
-        ):
-            logits_processor.append(
-                SuppressTokensLogitsProcessor(
-                    suppress_tokens=self.vocabulary_mapping.image_token_ids
-                    + [
-                        self.vocabulary_mapping.boi_token_id,
-                        self.vocabulary_mapping.eoi_token_id,
-                    ],
-                    device=self.device,
-                )
-            )
-        elif generation_config.multimodal_generation_mode == "image-only":
-            logits_processor.append(
-                ChameleonImageOnlyLogitsProcessor(
-                    eos_token_id=generation_config.eos_token_id,
-                    boi_token_id=self.vocabulary_mapping.boi_token_id,
-                    eoi_token_id=self.vocabulary_mapping.eoi_token_id,
-                    image_token_ids=self.vocabulary_mapping.image_token_ids,
-                    image_seq_length=self.vqmodel.quantize.quant_state_flattened_dim,
-                    begin_index=input_ids_seq_length,
-                    max_new_tokens=generation_config.max_new_tokens,
-                )
-            )
-        elif generation_config.multimodal_generation_mode == "free":
-            pass
-        elif generation_config.multimodal_generation_mode == "interleaved-text-image":
-            raise NotImplementedError("Interleaved text-image generation is not supported.")
-        else:
-            raise ValueError(
-                f"Unknown multimodal generation mode: {generation_config.multimodal_generation_mode}. Please choose one of 'free', 'text-only', 'image-only', or 'interleaved-text-image'."
-            )
-        return super()._get_logits_processor(
-            generation_config=generation_config,
-            input_ids_seq_length=input_ids_seq_length,
-            logits_processor=logits_processor,
-            **kwargs,
-        )
 
     @add_start_docstrings_to_model_forward(CHAMELEON_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
@@ -1718,8 +1675,123 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
     def get_decoder(self):
         return self.model
 
-    def _get_logits_processor(self, **kwargs) -> LogitsProcessorList:
-        return self.model._get_logits_processor(**kwargs)
+    @torch.no_grad()
+    def generate(
+        self,
+        inputs: Optional[torch.Tensor] = None,
+        generation_config: Optional[ChameleonGenerationConfig] = None,
+        logits_processor: Optional[LogitsProcessorList] = None,
+        **kwargs,
+    ) -> Union[GenerateOutput, torch.LongTensor]:
+        generation_config, model_kwargs = self._prepare_generation_config(generation_config, **kwargs)
+
+        inputs_tensor, model_input_name, model_kwargs = self._prepare_model_inputs(
+            inputs, generation_config.bos_token_id, model_kwargs
+        )
+        input_ids = inputs_tensor if model_input_name == "input_ids" else model_kwargs.pop("input_ids")
+
+        # Prepare `max_length` depending on other stopping criteria.
+        input_ids_length = input_ids.shape[-1]
+        has_default_max_length = kwargs.get("max_length") is None and generation_config.max_length is not None
+        has_default_min_length = kwargs.get("min_length") is None and generation_config.min_length is not None
+        generation_config = self._prepare_generated_length(
+            generation_config=generation_config,
+            has_default_max_length=has_default_max_length,
+            has_default_min_length=has_default_min_length,
+            model_input_name=model_input_name,
+            inputs_tensor=inputs_tensor,
+            input_ids_length=input_ids_length,
+        )
+
+        if logits_processor is None:
+            logits_processor = LogitsProcessorList()
+        if generation_config.multimodal_generation_mode == "text-only":
+            logits_processor.append(
+                SuppressTokensLogitsProcessor(
+                    suppress_tokens=self.vocabulary_mapping.image_token_ids
+                    + [
+                        self.vocabulary_mapping.boi_token_id,
+                        self.vocabulary_mapping.eoi_token_id,
+                    ],
+                    device=self.device,
+                )
+            )
+        elif generation_config.multimodal_generation_mode == "image-only":
+            allowed_tokens = self.vocabulary_mapping.image_token_ids + [
+                self.config.eos_token_id,
+                self.vocabulary_mapping.boi_token_id,
+                self.vocabulary_mapping.eoi_token_id,
+            ]
+            suppress_tokens = [token_id for token_id in range(self.vocab_size) if token_id not in allowed_tokens]
+            logits_processor.extend(
+                [
+                    AllowOnlyTokensAtRelativeOffsetLogitsProcessor(
+                        trigger_token_id=self.vocabulary_mapping.boi_token_id,
+                        allowed_token_ids=[self.vocabulary_mapping.eoi_token_id],
+                        offset=self.model.vqmodel.quantize.quant_state_flattened_dim + 1,
+                        exclusive=True,
+                        device=self.device,
+                    ),
+                    AllowOnlyTokensInRelativeWindowLogitsProcessor(
+                        trigger_token_id=self.vocabulary_mapping.boi_token_id,
+                        allowed_token_ids=self.vocabulary_mapping.image_token_ids,
+                        width=self.model.vqmodel.quantize.quant_state_flattened_dim,
+                        exclusive=True,
+                        device=self.device,
+                    ),
+                    # Don't start generating an image if there aren't enough space for the
+                    # rest of the image tokens.
+                    SuppressTokensInIndexRangeLogitsProcessor(
+                        suppress_tokens=[self.vocabulary_mapping.boi_token_id],
+                        start_index=generation_config.max_length
+                        - self.model.vqmodel.quantize.quant_state_flattened_dim
+                        - 1,
+                        device=self.device,
+                    ),
+                    # Allow only image tokens
+                    SuppressTokensLogitsProcessor(suppress_tokens=suppress_tokens, device=self.device),
+                ]
+            )
+        elif generation_config.multimodal_generation_mode == "interleaved-text-image":
+            logits_processor.extend(
+                [
+                    AllowOnlyTokensAtRelativeOffsetLogitsProcessor(
+                        trigger_token_id=self.vocabulary_mapping.boi_token_id,
+                        allowed_token_ids=[self.vocabulary_mapping.eoi_token_id],
+                        offset=self.model.vqmodel.quantize.quant_state_flattened_dim + 1,
+                        exclusive=True,
+                        device=self.device,
+                    ),
+                    AllowOnlyTokensInRelativeWindowLogitsProcessor(
+                        trigger_token_id=self.vocabulary_mapping.boi_token_id,
+                        allowed_token_ids=self.vocabulary_mapping.image_token_ids,
+                        width=self.model.vqmodel.quantize.quant_state_flattened_dim,
+                        exclusive=True,
+                        device=self.device,
+                    ),
+                    # Don't start generating an image if there aren't enough space for the
+                    # rest of the image tokens.
+                    SuppressTokensInIndexRangeLogitsProcessor(
+                        suppress_tokens=[self.vocabulary_mapping.boi_token_id],
+                        start_index=generation_config.max_length
+                        - self.model.vqmodel.quantize.quant_state_flattened_dim
+                        - 1,
+                        device=self.device,
+                    ),
+                ]
+            )
+        elif generation_config.multimodal_generation_mode == "unrestricted":
+            pass
+        else:
+            raise ValueError(
+                f"Unknown multimodal generation mode: {generation_config.multimodal_generation_mode}. Please choose one of 'unrestricted', 'text-only', 'image-only', or 'interleaved-text-image'."
+            )
+        return super().generate(
+            inputs=inputs,
+            generation_config=generation_config,
+            logits_processor=logits_processor,
+            **kwargs,
+        )
 
     @add_start_docstrings_to_model_forward(CHAMELEON_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)

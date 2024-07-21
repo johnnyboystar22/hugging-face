@@ -330,18 +330,6 @@ class GenerationConfig(PushToHubMixin):
         return_legacy_cache (`bool`, *optional*, default to `True`):
             Whether to return the legacy or new format of the cache when `DynamicCache` is used by default.
 
-        > Parameters specific to vision-language generation models such as [Chameleon](https://arxiv.org/abs/2405.09818v1)
-
-        multimodal_generation_mode (`Literal["text-only", "image-only", "interleaved-text-image", "free"]`, *optional*, defaults to `None`):
-            Chameleon can generate text, images, or both in an interleaved manner. However, only text generation is
-            supported by the official model checkpoint. This flag enables the other modes for use with finetuned versions
-            of the model such as [Anole](https://arxiv.org/abs/2407.06135).
-            - If set to `"text-only"`, logits for image tokens will be masked out during generation.
-            - If set to `"image-only"`, logits for non-image tokens will be masked out during generation.
-            - If set to `"free"`, the logits are left as-is.
-            - For `"interleaved-text-image"`, Chameleon implements a finite state machine to dynamically switch between text and image modalities.
-                This library does not support this mode yet.
-
         > Wild card
 
         generation_kwargs:
@@ -440,9 +428,6 @@ class GenerationConfig(PushToHubMixin):
         # Prompt lookup decoding
         self.prompt_lookup_num_tokens = kwargs.pop("prompt_lookup_num_tokens", None)
         self.max_matching_ngram_size = kwargs.pop("max_matching_ngram_size", None)
-
-        # Multimodal generation
-        self.multimodal_generation_mode = kwargs.pop("multimodal_generation_mode", None)
 
         # Wild card
         self.generation_kwargs = kwargs.pop("generation_kwargs", {})
