@@ -206,6 +206,39 @@ images = processor.postprocess_pixel_values(
 images[0].save("snowman.png")
 ```
 
+### Interleaved text-image generation
+
+We can also generate interleaved text and images in the output. Here is how you can do it:
+
+```python
+from transformers import ChameleonProcessor, ChameleonForCausalLM
+import torch
+from PIL import Image
+import requests
+
+processor = ChameleonProcessor.from_pretrained("leloy/Anole-7b-v0.1-hf")
+model = ChameleonForCausalLM.from_pretrained(
+    "leloy/Anole-7b-v0.1-hf",
+    device_map="auto",
+)
+
+# Prepare a prompt
+prompt = "Can you draw a snowman and explain how to build one?"
+
+# Preprocess the prompt
+inputs = processor(prompt, return_tensors="pt", padding=True).to(model.device)
+
+# Generate interleaved text and discrete image tokens
+# Note: We will need a larger `max_new_tokens` value since we are generating both text and image tokens.
+generate_ids = model.generate(
+    **inputs,
+    multimodal_generation_mode="interleaved-text-image",
+    max_new_tokens=4096,
+)
+```
+
+From here, you can split the generated tokens into text and image token segments, decode them separately as shown in the previous examples, and finally render the resulting text and images together. You can also use [MMSG](https://github.com/leloykun/mmsg) to do this more easily.
+
 ## Model optimization
 
 ### Quantization using Bitsandbytes
