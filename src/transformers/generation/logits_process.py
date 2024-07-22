@@ -1770,7 +1770,9 @@ class SuppressTokensInIndexRangeLogitsProcessor(LogitsProcessor):
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
         current_index = input_ids.shape[1]
         if self.start_index <= current_index < self.end_index:
-            scores[:, self.suppress_tokens] = torch.finfo(scores.dtype).min
+            suppress_tokens_mask = torch.zeros_like(scores, dtype=torch.bool)
+            suppress_tokens_mask[:, self.suppress_tokens] = True
+            return scores.masked_fill(suppress_tokens_mask, torch.finfo(scores.dtype).min)
         return scores
 
 
@@ -2533,25 +2535,20 @@ class AllowOnlyTokensAtRelativeOffsetLogitsProcessor(LogitsProcessor):
         self.exclusive = exclusive
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
-        if input_ids.shape[1] < self.offset:
-            if self.exclusive:
-                scores[:, self.allowed_token_ids] = torch.finfo(scores.dtype).min
+        if input_ids.shape[1] < self.offset and not self.exclusive:
             return scores
-
-        trigger_positions = (input_ids[:, -self.offset] == self.trigger_token_id).unsqueeze(-1)
 
         disallowed_tokens_mask = torch.ones_like(scores, dtype=torch.bool)
         disallowed_tokens_mask[:, self.allowed_token_ids] = False
 
+        if input_ids.shape[1] < self.offset:
+            return scores.masked_fill(~disallowed_tokens_mask, torch.finfo(scores.dtype).min)
+
+        trigger_positions = (input_ids[:, -self.offset] == self.trigger_token_id).unsqueeze(-1)
+
         if self.exclusive:
-            return scores.masked_fill_(
-                ~(disallowed_tokens_mask ^ trigger_positions),
-                torch.finfo(scores.dtype).min,
-            )
-        return scores.masked_fill_(
-            disallowed_tokens_mask & trigger_positions,
-            torch.finfo(scores.dtype).min,
-        )
+            return scores.masked_fill(~(disallowed_tokens_mask ^ trigger_positions), torch.finfo(scores.dtype).min)
+        return scores.masked_fill(disallowed_tokens_mask & trigger_positions, torch.finfo(scores.dtype).min)
 
 
 class AllowOnlyTokensInRelativeWindowLogitsProcessor(LogitsProcessor):
@@ -2597,11 +2594,11 @@ class AllowOnlyTokensInRelativeWindowLogitsProcessor(LogitsProcessor):
         disallowed_tokens_mask[:, self.allowed_token_ids] = False
 
         if self.exclusive:
-            return scores.masked_fill_(
+            return scores.masked_fill(
                 ~(disallowed_tokens_mask ^ trigger_positions),
                 torch.finfo(scores.dtype).min,
             )
-        return scores.masked_fill_(
+        return scores.masked_fill(
             disallowed_tokens_mask & trigger_positions,
             torch.finfo(scores.dtype).min,
         )
