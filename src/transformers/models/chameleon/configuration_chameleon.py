@@ -177,7 +177,7 @@ class ChameleonConfig(PretrainedConfig):
             ChameleonVQConfig instance containing the configuration for the VQ-VAE model.
         vocabulary_map (`dict`, *optional*):
             A dictionary containing the vocabulary map from the tokenizer. Used to obtain tokens from the image inputs.
-        image_token_id (`int`, *optional*):
+        image_token_id (`int`, *optional*, defaults to 8711):
             The ID for the token used to represent the image in the input sequence.
         boi_token_id (`int`, *optional*, defaults to 8197):
             Beginning of image token stream id.
@@ -228,7 +228,7 @@ class ChameleonConfig(PretrainedConfig):
         swin_norm=False,
         vq_config=None,
         vocabulary_map=None,
-        image_token_id=None,
+        image_token_id=8711,
         boi_token_id=8197,
         eoi_token_id=8196,
         mlp_bias=False,
