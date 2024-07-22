@@ -26,6 +26,7 @@ from torch.nn import CrossEntropyLoss
 
 from ...activations import ACT2FN
 from ...cache_utils import Cache, StaticCache
+from ...generation.configuration_utils import GenerationConfig
 from ...generation.logits_process import (
     AllowOnlyTokensAtRelativeOffsetLogitsProcessor,
     AllowOnlyTokensInRelativeWindowLogitsProcessor,
@@ -52,7 +53,6 @@ from ...utils import (
     replace_return_docstrings,
 )
 from .configuration_chameleon import ChameleonConfig, ChameleonVQVAEConfig
-from .generation_configuration_chameleon import ChameleonGenerationConfig
 
 
 if is_flash_attn_2_available():
@@ -1251,7 +1251,6 @@ CHAMELEON_START_DOCSTRING = r"""
 )
 class ChameleonPreTrainedModel(PreTrainedModel):
     config_class = ChameleonConfig
-    generation_config_class = ChameleonGenerationConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
     _no_split_modules = ["ChameleonDecoderLayer", "ChameleonSwinDecoderLayer"]
@@ -1679,7 +1678,7 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
     def generate(
         self,
         inputs: Optional[torch.Tensor] = None,
-        generation_config: Optional[ChameleonGenerationConfig] = None,
+        generation_config: Optional[GenerationConfig] = None,
         logits_processor: Optional[LogitsProcessorList] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:

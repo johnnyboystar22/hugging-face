@@ -1276,8 +1276,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
 
         - **config_class** ([`PretrainedConfig`]) -- A subclass of [`PretrainedConfig`] to use as configuration class
           for this model architecture.
-        - **generation_config_class** ([`GenerationConfig`]) -- A subclass of [`GenerationConfig`] to use as configuration class
-          for this model's generation method.
         - **load_tf_weights** (`Callable`) -- A python *method* for loading a TensorFlow checkpoint in a PyTorch model,
           taking as arguments:
 
@@ -1293,7 +1291,6 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
     """
 
     config_class = None
-    generation_config_class = None
     base_model_prefix = ""
     main_input_name = "input_ids"
     model_tags = None
@@ -1363,11 +1360,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
 
         self.name_or_path = config.name_or_path
         self.warnings_issued = {}
-        if self.generation_config_class is None:
-            self.generation_config_class = GenerationConfig
-        self.generation_config = (
-            self.generation_config_class.from_model_config(config) if self.can_generate() else None
-        )
+        self.generation_config = GenerationConfig.from_model_config(config) if self.can_generate() else None
         # Overwrite the class attribute to make it an instance attribute, so models like
         # `InstructBlipForConditionalGeneration` can dynamically update it without modifying the class attribute
         # when a different component (e.g. language_model) is used.
@@ -2513,7 +2506,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
                     model_to_save.generation_config._from_model_config
                     and model_to_save.config._has_non_default_generation_parameters()
                 ):
-                    new_generation_config = self.generation_config_class.from_model_config(model_to_save.config)
+                    new_generation_config = GenerationConfig.from_model_config(model_to_save.config)
                     if new_generation_config != model_to_save.generation_config:
                         logger.warning(
                             "Your generation config was originally created from the model config, but the model "
@@ -3917,7 +3910,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
         # If it is a model with generation capabilities, attempt to load the generation config
         if model.can_generate() and pretrained_model_name_or_path is not None:
             try:
-                model.generation_config = model.generation_config_class.from_pretrained(
+                model.generation_config = GenerationConfig.from_pretrained(
                     pretrained_model_name_or_path,
                     cache_dir=cache_dir,
                     force_download=force_download,

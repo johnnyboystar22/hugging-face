@@ -375,6 +375,10 @@ def write_model(model_path, input_base_path, model_size, chameleon_version=1):
     with init_empty_weights():
         model = ChameleonForConditionalGeneration(config)
 
+    # Add multimodal_generation_mode to the generation config
+    model.generation_config.multimodal_generation_mode = "text-only"
+    model.generation_config._from_model_config = False
+
     model.load_state_dict(state_dict, assign=True, strict=False)
     model.save_pretrained(model_path, safe_serialization=True)
 
