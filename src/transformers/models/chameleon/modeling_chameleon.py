@@ -1674,6 +1674,19 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
     def get_decoder(self):
         return self.model
 
+    def _prepare_generation_config(
+        self,
+        generation_config: Optional[GenerationConfig] = None,
+        **kwargs,
+    ):
+        generation_config, model_kwargs = super()._prepare_generation_config(generation_config, **kwargs)
+        if (
+            not hasattr(generation_config, "multimodal_generation_mode")
+            or generation_config.multimodal_generation_mode is None
+        ):
+            generation_config.multimodal_generation_mode = "text-only"
+        return generation_config, model_kwargs
+
     @torch.no_grad()
     def generate(
         self,
