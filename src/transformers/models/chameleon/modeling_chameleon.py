@@ -16,7 +16,7 @@
 
 import math
 from functools import cached_property
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Literal, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -1677,9 +1677,14 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
     def _prepare_generation_config(
         self,
         generation_config: Optional[GenerationConfig] = None,
+        multimodal_generation_mode: Optional[
+            Literal["text-only", "image-only", "interleaved-text-image", "unrestricted"]
+        ] = None,
         **kwargs,
     ):
         generation_config, model_kwargs = super()._prepare_generation_config(generation_config, **kwargs)
+        if multimodal_generation_mode is not None:
+            generation_config.multimodal_generation_mode = multimodal_generation_mode
         if (
             not hasattr(generation_config, "multimodal_generation_mode")
             or generation_config.multimodal_generation_mode is None
@@ -1693,9 +1698,14 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
         inputs: Optional[torch.Tensor] = None,
         generation_config: Optional[GenerationConfig] = None,
         logits_processor: Optional[LogitsProcessorList] = None,
+        multimodal_generation_mode: Optional[
+            Literal["text-only", "image-only", "interleaved-text-image", "unrestricted"]
+        ] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
-        generation_config, model_kwargs = self._prepare_generation_config(generation_config, **kwargs)
+        generation_config, model_kwargs = self._prepare_generation_config(
+            generation_config, multimodal_generation_mode, **kwargs
+        )
 
         inputs_tensor, model_input_name, model_kwargs = self._prepare_model_inputs(
             inputs, generation_config.bos_token_id, model_kwargs

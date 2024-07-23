@@ -81,7 +81,7 @@ def write_json(text, path):
         json.dump(text, f)
 
 
-def write_model(model_path, input_base_path, model_size, chameleon_version=1):
+def write_model(model_path, input_base_path, model_size, chameleon_version=1, vqvae_path=None, run_tests=True):
     os.makedirs(model_path, exist_ok=True)
     input_model_path = os.path.join(input_base_path, "models", model_size.lower())
     params_path = os.path.join(input_model_path, "params.json")
@@ -375,12 +375,18 @@ def write_model(model_path, input_base_path, model_size, chameleon_version=1):
     with init_empty_weights():
         model = ChameleonForConditionalGeneration(config)
 
-    # Add multimodal_generation_mode to the generation config
-    model.generation_config.multimodal_generation_mode = "text-only"
+    # Add to generation config
     model.generation_config._from_model_config = False
+    model.generation_config.multimodal_generation_mode = "text-only"
+    model.generation_config.do_sample = True
+    model.generation_config.temperature = 0.7
+    model.generation_config.top_p = 0.7
 
     model.load_state_dict(state_dict, assign=True, strict=False)
     model.save_pretrained(model_path, safe_serialization=True)
+
+    if vqvae_path is not None:
+        model.model.vqmodel.save_pretrained(vqvae_path, safe_serialization=True)
 
     # Load and save the processor
     tokenizer = LlamaTokenizerFast(
@@ -397,6 +403,10 @@ def write_model(model_path, input_base_path, model_size, chameleon_version=1):
     del loaded
     del vqgan_state_dict
     gc.collect()
+
+    if not run_tests:
+        print("Skipping tests...")
+        return
 
     # Short inference on a few examples to check if generation makes sense
     # taken from https://github.com/facebookresearch/chameleon/blob/7a72f40aa5f462965c8374f25257f55b65b25ff4/data/prompts_for_human_evaluations.jsonl
@@ -468,12 +478,24 @@ def main():
         type=int,
         help="Version of the Chameleon model to convert",
     )
+    parser.add_argument(
+        "--vqvae_path",
+        default=None,
+        help="Location to write VQ-VAE model",
+    )
+    parser.add_argument(
+        "--run_tests",
+        action="store_true",
+        help="Whether to run tests on the converted model.",
+    )
     args = parser.parse_args()
     write_model(
         model_path=args.output_dir,
         input_base_path=args.input_dir,
         model_size=args.model_size,
         chameleon_version=args.chameleon_version,
+        vqvae_path=args.vqvae_path,
+        run_tests=args.run_tests,
     )
 
 
