@@ -6170,13 +6170,6 @@ class MSClapAudioModelWithProjection(metaclass=DummyObject):
         requires_backends(self, ["torch"])
 
 
-class MSClapFeatureExtractor(metaclass=DummyObject):
-    _backends = ["torch"]
-
-    def __init__(self, *args, **kwargs):
-        requires_backends(self, ["torch"])
-
-
 class MSClapModel(metaclass=DummyObject):
     _backends = ["torch"]
 
