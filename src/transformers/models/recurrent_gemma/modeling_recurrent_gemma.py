@@ -26,6 +26,7 @@ from torch.nn import CrossEntropyLoss
 from ...activations import ACT2FN
 from ...modeling_attn_mask_utils import AttentionMaskConverter
 from ...modeling_outputs import BaseModelOutputWithNoAttention, CausalLMOutput
+from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ...modeling_utils import PreTrainedModel
 from ...pytorch_utils import ALL_LAYERNORM_LAYERS
 from ...utils import (
@@ -63,23 +64,47 @@ class RecurrentGemmaRMSNorm(nn.Module):
 ALL_LAYERNORM_LAYERS.append(RecurrentGemmaRMSNorm)
 
 
+# Adapted from LlamaRotaryEmbedding
 class RecurrentGemmaRotaryEmbedding(nn.Module):
-    def __init__(self, dim, base=10000, device=None):
+    def __init__(
+        self,
+        dim=None,
+        base=10000,
+        device=None,
+        config: Optional[RecurrentGemmaConfig] = None,
+    ):
         super().__init__()
-        self.dim = dim
-        self.base = base
-        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2, dtype=torch.int64).float() / self.dim))
-        self.register_buffer("inv_freq", tensor=inv_freq, persistent=False)
+        # TODO (joao): remove the `if` below, only used for BC
+        self.rope_kwargs = {}
+        if config is None:
+            logger.warning_once(
+                "`RecurrentGemmaRotaryEmbedding` can now be fully parameterized by passing the model config through the "
+                "`config` argument. All other arguments will be removed in v4.45"
+            )
+            self.rope_kwargs = {
+                "type": "default",
+                "dim": dim,
+                "base": base,
+            }
+            self.rope_type = "default"
+        else:
+            self.rope_type = config.rope_scaling["type"] if config.rope_scaling is not None else "default"
+
+        self.config = config
+        if self.rope_type not in ("default", "linear"):
+            raise ValueError(f"RecurrentGemma only supports 'default' and 'linear' RoPE types, got {self.rope_type}")
+
+        self.rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+
+        inv_freq, self.attention_scaling = self.rope_init_fn(config, device, **self.rope_kwargs)
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     @torch.no_grad()
-    # Copied from transformers.models.gemma.modeling_gemma.GemmaRotaryEmbedding.forward with Gemma->RecurrentGemma
-    def forward(self, x, position_ids, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        self.inv_freq.to(x.device)
+    def forward(self, x, position_ids):
+        # Core RoPE block
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         position_ids_expanded = position_ids[:, None, :].float()
-        # Force float32 since bfloat16 loses precision on long contexts
-        # See https://github.com/huggingface/transformers/pull/29285
+        # Force float32 (see https://github.com/huggingface/transformers/pull/29285)
         device_type = x.device.type
         device_type = device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
         with torch.autocast(device_type=device_type, enabled=False):
@@ -87,6 +112,11 @@ class RecurrentGemmaRotaryEmbedding(nn.Module):
             emb = torch.cat((freqs, freqs), dim=-1)
             cos = emb.cos()
             sin = emb.sin()
+
+        # Advanced RoPE types (e.g. yarn) apply a post-processing scaling factor, equivalent to scaling attention
+        cos = cos * self.attention_scaling
+        sin = sin * self.attention_scaling
+
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
@@ -157,10 +187,9 @@ class RecurrentGemmaSdpaAttention(nn.Module):
         self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
         self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
         self.o_proj = nn.Linear(self.num_attention_heads * self.head_dim, self.hidden_size, bias=True)
-        self.rotary_emb = RecurrentGemmaRotaryEmbedding(
-            int(self.partial_rotary_factor * self.head_dim),
-            base=config.rope_theta,
-        )
+
+        # TODO (joao): remove in v4.45 (RoPE is computed in the model, not in the decoder layers)
+        self.rotary_emb = RecurrentGemmaRotaryEmbedding(config=self.config)
 
     def forward(
         self,
@@ -169,6 +198,7 @@ class RecurrentGemmaSdpaAttention(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         cache_position: Optional[torch.LongTensor] = None,
         use_cache: bool = False,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
 
@@ -180,7 +210,16 @@ class RecurrentGemmaSdpaAttention(nn.Module):
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
-        cos, sin = self.rotary_emb(value_states, position_ids, seq_len=None)
+        if position_embeddings is None:
+            logger.warning_once(
+                "The attention layers in this model are transitioning from computing the RoPE embeddings internally "
+                "through `position_ids` (2D tensor with the indexes of the tokens), to using externally computed "
+                "`position_embeddings` (Tuple of tensors, containing cos and sin). In v4.45 `position_ids` will be "
+                "removed and `position_embeddings` will be mandatory."
+            )
+            cos, sin = self.rotary_emb(value_states, position_ids)
+        else:
+            cos, sin = position_embeddings
 
         # Partial rotary embedding
         query_rot, query_pass = torch.chunk(query_states, int(1 / self.partial_rotary_factor), dim=-1)
@@ -424,6 +463,7 @@ class RecurrentGemmaRecurrentBlock(nn.Module):
         attention_mask: torch.Tensor,
         cache_position: torch.Tensor,
         use_cache: bool = True,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         _, seq_len, _ = input_states.shape
 
@@ -493,12 +533,18 @@ class RecurrentGemmaDecoderLayer(nn.Module):
         attention_mask: torch.Tensor,
         cache_position: torch.Tensor = None,
         use_cache: bool = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         raw_activations = activations
         inputs_normalized = self.temporal_pre_norm(raw_activations)  # RMSNorm introduces slight slight differences
 
         hidden_states = self.temporal_block(
-            inputs_normalized, position_ids, attention_mask, cache_position=cache_position, use_cache=use_cache
+            inputs_normalized,
+            position_ids,
+            attention_mask,
+            cache_position=cache_position,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
         )
 
         residual = hidden_states + raw_activations
@@ -632,6 +678,10 @@ RECURRENTGEMMA_INPUTS_DOCSTRING = r"""
             Indices depicting the position of the input sequence tokens in the sequence. Contrarily to `position_ids`,
             this tensor is not affected by padding. It is used to update the cache in the correct position and to infer
             the complete sequence length.
+        position_embeddings (`Tuple[torch.FloatTensor, torch.FloatTensor]`, *optional*):
+            Tuple containing the cosine and sine positional embeddings of shape `(batch_size, seq_len, head_dim)`,
+            with `head_dim` being the embedding dimension of each attention head. This input is used to dynamically
+            overwrite the default positional embeddings.
 """
 
 
@@ -657,6 +707,7 @@ class RecurrentGemmaModel(RecurrentGemmaPreTrainedModel):
             [RecurrentGemmaDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self.final_norm = RecurrentGemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.rotary_emb = RecurrentGemmaRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
 
         self.register_buffer(
@@ -684,6 +735,7 @@ class RecurrentGemmaModel(RecurrentGemmaPreTrainedModel):
         use_cache: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Union[Tuple, BaseModelOutputWithNoAttention]:
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -719,16 +771,28 @@ class RecurrentGemmaModel(RecurrentGemmaPreTrainedModel):
 
         hidden_states = hidden_states * self.normalizer.type(hidden_states.dtype)
 
+        # create position embeddings to be shared across the decoder layers, if not passed
+        if position_embeddings is None:
+            position_embeddings = self.rotary_emb(hidden_states, position_ids)
+
         all_hidden_states = () if output_hidden_states else None
         for i, residual_block in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             if self.gradient_checkpointing and self.training:
                 hidden_states = self._gradient_checkpointing_func(
-                    residual_block.__call__, hidden_states, position_ids, causal_mask, cache_position, use_cache
+                    residual_block.__call__,
+                    hidden_states,
+                    position_ids,
+                    causal_mask,
+                    cache_position,
+                    use_cache,
+                    position_embeddings,
                 )
             else:
-                hidden_states = residual_block(hidden_states, position_ids, causal_mask, cache_position, use_cache)
+                hidden_states = residual_block(
+                    hidden_states, position_ids, causal_mask, cache_position, use_cache, position_embeddings
+                )
 
         hidden_states = self.final_norm(hidden_states)
 
@@ -815,13 +879,15 @@ class RecurrentGemmaForCausalLM(RecurrentGemmaPreTrainedModel):
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         use_cache: Optional[bool] = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Union[Tuple, CausalLMOutput]:
         r"""
         Args:
@@ -855,12 +921,14 @@ class RecurrentGemmaForCausalLM(RecurrentGemmaPreTrainedModel):
         output_hidden_states = True
         outputs = self.model(
             input_ids=input_ids,
-            cache_position=cache_position,
+            position_ids=position_ids,
             attention_mask=attention_mask,
+            cache_position=cache_position,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            position_embeddings=position_embeddings,
         )
 
         hidden_states = outputs[0]

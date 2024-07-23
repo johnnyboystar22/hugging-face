@@ -1153,7 +1153,7 @@ class Starcoder2ForSequenceClassification(Starcoder2PreTrainedModel):
     @add_start_docstrings_to_model_forward(STARCODER2_INPUTS_DOCSTRING)
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
@@ -1163,6 +1163,7 @@ class Starcoder2ForSequenceClassification(Starcoder2PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -1182,6 +1183,7 @@ class Starcoder2ForSequenceClassification(Starcoder2PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            position_embeddings=position_embeddings,
         )
         hidden_states = transformer_outputs[0]
         logits = self.score(hidden_states)
@@ -1286,6 +1288,7 @@ class Starcoder2ForTokenClassification(Starcoder2PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Union[Tuple, TokenClassifierOutput]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -1305,6 +1308,7 @@ class Starcoder2ForTokenClassification(Starcoder2PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            position_embeddings=position_embeddings,
         )
         sequence_output = outputs[0]
         sequence_output = self.dropout(sequence_output)
