@@ -82,12 +82,7 @@ url = 'http://images.cocodataset.org/val2017/000000039769.jpg'
 image = Image.open(requests.get(url, stream=True).raw)
 prompt = "What do you see in this image?<image>"
 
-inputs = processor(
-    prompt,
-    image,
-    return_tensors="pt",
-    return_for_text_completion=True,
-).to(model.device)
+inputs = processor(prompt, image, return_tensors="pt").to(model.device)
 
 # autoregressively complete prompt
 output = model.generate(**inputs, max_new_tokens=50)
@@ -130,7 +125,6 @@ inputs = processor(
     images=[image_stop, image_cats, image_snowman],
     padding=True,
     return_tensors="pt",
-    return_for_text_completion=True,
 ).to(device="cuda", dtype=torch.float16)
 
 # Generate
@@ -157,12 +151,7 @@ model = ChameleonForConditionalGeneration.from_pretrained(
 prompt = "Generate an image of a snowman."
 
 # Preprocess the prompt
-inputs = processor(
-    prompt,
-    padding=True,
-    return_tensors="pt",
-    return_for_text_completion=True,
-).to(model.device)
+inputs = processor(prompt, padding=True, return_tensors="pt").to(model.device)
 
 # Generate discrete image tokens
 generate_ids = model.generate(
@@ -217,7 +206,6 @@ inputs = processor(
     images=[image_snowman],
     padding=True,
     return_tensors="pt",
-    return_for_text_completion=True,
 ).to(model.device)
 
 # Generate discrete image tokens
@@ -262,12 +250,7 @@ model = ChameleonForConditionalGeneration.from_pretrained(
 prompt = "Can you draw a snowman and explain how to build one?"
 
 # Preprocess the prompt
-inputs = processor(
-    prompt,
-    padding=True,
-    return_tensors="pt",
-    return_for_text_completion=True,
-).to(model.device)
+inputs = processor(prompt, padding=True, return_tensors="pt").to(model.device)
 
 # Generate interleaved text and discrete image tokens
 generate_ids = model.generate(
