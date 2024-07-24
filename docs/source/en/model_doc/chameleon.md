@@ -34,13 +34,13 @@ being competitive with models such as Mixtral 8x7B and Gemini-Pro, and performs 
 generation, all in a single model. It also matches or exceeds the performance of much larger models,
 including Gemini Pro and GPT-4V, according to human judgments on a new long-form mixed-modal
 generation evaluation, where either the prompt or outputs contain mixed sequences of both images and
-text. Chameleon marks a significant step forward in a unified modeling of full multimodal documents*
+text. Chameleon marks a significant step forward in unified modeling of full multimodal documents*
 
 
 <img src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/model_doc/chameleon_arch.png"
 alt="drawing" width="600"/>
 
-<small> Chameleon incorporates a vector quantizer module to transform images into discrete tokens. That also enables image geenration using an auto-regressive transformer. Taken from the <a href="https://arxiv.org/abs/2405.09818v1">original paper.</a> </small>
+<small> Chameleon incorporates a vector quantizer module to transform images into discrete tokens. That also enables image generation using an auto-regressive transformer. Taken from the <a href="https://arxiv.org/abs/2405.09818v1">original paper.</a> </small>
 
 This model was contributed by [joaogante](https://huggingface.co/joaogante) and [RaushanTurganbay](https://huggingface.co/RaushanTurganbay).
 The original code can be found [here](https://github.com/facebookresearch/chameleon).
@@ -57,7 +57,7 @@ The original code can be found [here](https://github.com/facebookresearch/chamel
 - Chameleon generates in chat format which means that the generated text will always be the "assistant's turn". You can enable a text completion generation by passing `return_for_text_completion=True` when calling the processor.
 
 > [!NOTE]
-> Chameleon implementation in Transformers uses a special image token to indicate where to merge image embeddings. For special image token we didn't add a new one but used one of the reserved tokens: `<reserved08707>`.
+> Chameleon implementation in Transformers uses a special image token to indicate where to merge image embeddings. For special image token we didn't add a new one but used one of the reserved tokens: `<reserved08707>`. You have to add `<image>` to your prompt in the place where the image should be embedded for correct generation.
 
 > [!NOTE]
 > The official model checkpoint currently only supports text generation. To generate images and interleaved text-image responses, you can use finetuned versions such as [Anole](https://arxiv.org/abs/2407.06135). Note however that Anole has a bias for "empty" or background patches, so it is recommended to use sampling when generating images (i.e. setting `do_sample=True` during generation) to reduce the likelihood of generating a blank image.
@@ -66,7 +66,8 @@ The original code can be found [here](https://github.com/facebookresearch/chamel
 
 ### Single image inference
 
-Here's how to load the model and perform inference in half-precision (`torch.float16`):
+Chameleon is a gated model so make sure to have access and login to Hugging Face Hub using a token. 
+Here's how to load the model and perform inference in half-precision (`torch.bfloat16`):
 
 ```python
 from transformers import ChameleonProcessor, ChameleonForConditionalGeneration
@@ -75,7 +76,7 @@ from PIL import Image
 import requests
 
 processor = ChameleonProcessor.from_pretrained("facebook/chameleon-7b")
-model = ChameleonForConditionalGeneration.from_pretrained("facebook/chameleon-7b", torch_dtype=torch.float16, device_map="auto")
+model = ChameleonForConditionalGeneration.from_pretrained("facebook/chameleon-7b", torch_dtype=torch.bfloat16, device_map="cuda")
 
 # prepare image and text prompt
 url = 'http://images.cocodataset.org/val2017/000000039769.jpg'
@@ -100,7 +101,8 @@ from PIL import Image
 import requests
 
 processor = ChameleonProcessor.from_pretrained("facebook/chameleon-7b")
-model = ChameleonForConditionalGeneration.from_pretrained("facebook/chameleon-7b", torch_dtype=torch.float16, device_map="auto")
+
+model = ChameleonForConditionalGeneration.from_pretrained("facebook/chameleon-7b", torch_dtype=torch.bfloat16, device_map="cuda")
 
 # Get three different images
 url = "https://www.ilankelman.org/stopsigns/australia.jpg"
@@ -125,7 +127,7 @@ inputs = processor(
     images=[image_stop, image_cats, image_snowman],
     padding=True,
     return_tensors="pt",
-).to(device="cuda", dtype=torch.float16)
+).to(device="cuda", dtype=torch.bfloat16)
 
 # Generate
 generate_ids = model.generate(**inputs, max_new_tokens=50)
@@ -284,7 +286,7 @@ quantization_config = BitsAndBytesConfig(
     bnb_4bit_compute_dtype=torch.float16,
 )
 
-model = ChameleonForConditionalGeneration.from_pretrained("meta-chameleon", quantization_config=quantization_config, device_map="auto")
+model = ChameleonForConditionalGeneration.from_pretrained("facebook/chameleon-7b", quantization_config=quantization_config, device_map="cuda")
 ```
 
 ### Use Flash-Attention 2 and SDPA to further speed-up generation
@@ -294,9 +296,10 @@ The models supports both, Flash-Attention 2 and PyTorch's [`torch.nn.functional.
 ```python
 from transformers import ChameleonForConditionalGeneration
 
+model_id = "facebook/chameleon-7b"
 model = ChameleonForConditionalGeneration.from_pretrained(
     model_id, 
-    torch_dtype=torch.float16, 
+    torch_dtype=torch.bfloat16, 
     low_cpu_mem_usage=True,
     attn_implementation="flash_attention_2"
 ).to(0)
