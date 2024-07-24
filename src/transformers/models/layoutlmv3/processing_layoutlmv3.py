@@ -24,6 +24,7 @@ from ...image_utils import ImageInput
 from ...processing_utils import ImagesKwargs, ProcessingKwargs, ProcessorMixin
 from ...tokenization_utils_base import BatchEncoding, PreTokenizedInput, TextInput
 
+
 if sys.version_info >= (3, 11):
     from typing import Unpack
 else:
