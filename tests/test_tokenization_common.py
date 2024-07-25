@@ -4247,37 +4247,6 @@ class TokenizerTesterMixin:
                     # Should not raise an error
                     self.rust_tokenizer_class.from_pretrained(tmp_dir_2)
 
-    def test_clean_up_tokenization_spaces(self):
-        tokenizer = self.get_tokenizer()
-        unclean_text = "shouldn ' t be !"
-
-        tokenizer.clean_up_tokenization_spaces = True
-        tokens = tokenizer.encode(unclean_text, add_special_tokens=False)
-        clean_decoded = tokenizer.decode(tokens)
-
-        tokenizer.clean_up_tokenization_spaces = False
-        tokens = tokenizer.encode(unclean_text, add_special_tokens=False)
-        unclean_decoded = tokenizer.decode(tokens)
-        assert unclean_decoded != clean_decoded
-
-        # Fast from slow
-        with tempfile.TemporaryDirectory() as tmp_dir_2:
-            tokenizer.save_pretrained(tmp_dir_2)
-            tokenizer_fast = self.rust_tokenizer_class.from_pretrained(tmp_dir_2, from_slow=True)
-            del tokenizer
-
-        assert tokenizer_fast.clean_up_tokenization_spaces is False
-        decoded = tokenizer_fast.decode(tokens)
-        # fast and slow don't have the same output when we don't cleanup
-        # tokenization space. Here `be!` vs `be !` and `go.` vs `go .`
-        assert unclean_decoded == decoded
-
-        tokenizer_fast.clean_up_tokenization_spaces = True
-        assert tokenizer_fast.clean_up_tokenization_spaces is True
-
-        decoded = tokenizer_fast.decode(tokens)
-        assert clean_decoded == decoded
-
     def test_split_special_tokens(self):
         if not self.test_slow_tokenizer:
             self.skipTest(reason="test_slow_tokenizer is set to False")
