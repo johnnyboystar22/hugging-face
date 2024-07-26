@@ -2711,7 +2711,6 @@ else:
             "MSClapAudioModelWithProjection",
             "MSClapModel",
             "MSClapPreTrainedModel",
-            "MSClapTextModel",
             "MSClapTextModelWithProjection",
         ]
     )
@@ -7174,7 +7173,6 @@ if TYPE_CHECKING:
             MSClapAudioModelWithProjection,
             MSClapModel,
             MSClapPreTrainedModel,
-            MSClapTextModel,
             MSClapTextModelWithProjection,
         )
         from .models.mt5 import (
