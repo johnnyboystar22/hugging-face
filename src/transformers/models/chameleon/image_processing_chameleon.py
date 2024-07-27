@@ -438,8 +438,13 @@ class ChameleonImageProcessor(BaseImageProcessor):
             input_data_format = infer_channel_dimension_format(pixel_values[0])
 
         if do_unnormalize:
-            pixel_values = self.unnormalize(
-                pixel_values, mean=image_mean, std=image_std, input_data_format=input_data_format
+            pixel_values = np.asarray(
+                [
+                    self.unnormalize(
+                        pixel_values_, mean=image_mean, std=image_std, input_data_format=input_data_format
+                    )
+                    for pixel_values_ in pixel_values
+                ]
             )
 
         if do_rescale:
