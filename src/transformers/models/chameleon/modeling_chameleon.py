@@ -1,10 +1,5 @@
 # coding=utf-8
-# Copyright 2023 Mistral AI and the HuggingFace Inc. team. All rights reserved.
-#
-# This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
-# and OPT implementations in this library. It has been modified from its
-# original forms to accommodate minor architectural differences compared
-# to GPT-NeoX and OPT used by the Meta AI team that trained the model.
+# Copyright 2024 Meta Inc. and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,27 +12,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""PyTorch Mistral model."""
+"""PyTorch Chameleon model."""
 
 import math
-from typing import List, Optional, Tuple, Union
+from functools import cached_property
+from typing import Optional, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from torch.nn import CrossEntropyLoss
 
 from ...activations import ACT2FN
-from ...cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
+from ...cache_utils import Cache, StaticCache
 from ...modeling_attn_mask_utils import AttentionMaskConverter
+from ...modeling_flash_attention_utils import _flash_attention_forward
 from ...modeling_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
-    SequenceClassifierOutputWithPast,
-    TokenClassifierOutput,
 )
 from ...modeling_utils import PreTrainedModel
+from ...pytorch_utils import ALL_LAYERNORM_LAYERS
 from ...utils import (
+    add_code_sample_docstrings,
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
     is_flash_attn_2_available,
@@ -45,22 +43,27 @@ from ...utils import (
     logging,
     replace_return_docstrings,
 )
-from .configuration_mistral import MistralConfig
+from .configuration_chameleon import ChameleonConfig, ChameleonVQVAEConfig
 
 
 if is_flash_attn_2_available():
-    from ...modeling_flash_attention_utils import _flash_attention_forward
+    from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
+
 
 logger = logging.get_logger(__name__)
 
-_CONFIG_FOR_DOC = "MistralConfig"
+_CONFIG_FOR_DOC = "ChameleonConfig"
+_CHECKPOINT_FOR_DOC = "meta/chameleon-7b"
+_EXPECTED_OUTPUT_SHAPE = [1, 7, 4096]
+_SEQ_CLASS_EXPECTED_LOSS = 1.03
+_SEQ_CLASS_EXPECTED_OUTPUT = "'LABEL_0'"
 
 
-# Copied from transformers.models.llama.modeling_llama.LlamaRMSNorm with Llama->Mistral
-class MistralRMSNorm(nn.Module):
+# Copied from transformers.models.llama.modeling_llama.LlamaRMSNorm with Llama->Chameleon
+class ChameleonRMSNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
         """
-        MistralRMSNorm is equivalent to T5LayerNorm
+        ChameleonRMSNorm is equivalent to T5LayerNorm
         """
         super().__init__()
         self.weight = nn.Parameter(torch.ones(hidden_size))
@@ -74,18 +77,23 @@ class MistralRMSNorm(nn.Module):
         return self.weight * hidden_states.to(input_dtype)
 
 
-class MistralRotaryEmbedding(nn.Module):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
-        super().__init__()
+ALL_LAYERNORM_LAYERS.append(ChameleonRMSNorm)
 
+
+# Copied from transformers.models.llama.modeling_llama.LlamaRotaryEmbedding with Llama->Chameleon
+class ChameleonRotaryEmbedding(nn.Module):
+    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None, scaling_factor=1.0):
+        super().__init__()
+        self.scaling_factor = scaling_factor
         self.dim = dim
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2, dtype=torch.int64).float().to(device) / self.dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
+        # For BC we register cos and sin cached
+        self.max_seq_len_cached = max_position_embeddings
 
     @torch.no_grad()
-    # Copied from transformers.models.llama.modeling_llama.LlamaRotaryEmbedding.forward
     def forward(self, x, position_ids):
         # x: [bs, num_attention_heads, seq_len, head_size]
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
@@ -100,6 +108,37 @@ class MistralRotaryEmbedding(nn.Module):
             cos = emb.cos()
             sin = emb.sin()
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+
+
+# Copied from transformers.models.llama.modeling_llama.LlamaLinearScalingRotaryEmbedding with Llama->Chameleon
+class ChameleonLinearScalingRotaryEmbedding(ChameleonRotaryEmbedding):
+    """ChameleonRotaryEmbedding extended with linear scaling. Credits to the Reddit user /u/kaiokendev"""
+
+    def forward(self, x, position_ids):
+        # difference to the original RoPE: a scaling factor is aplied to the position ids
+        position_ids = position_ids.float() / self.scaling_factor
+        cos, sin = super().forward(x, position_ids)
+        return cos, sin
+
+
+# Copied from transformers.models.llama.modeling_llama.LlamaDynamicNTKScalingRotaryEmbedding with Llama->Chameleon
+class ChameleonDynamicNTKScalingRotaryEmbedding(ChameleonRotaryEmbedding):
+    """ChameleonRotaryEmbedding extended with Dynamic NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla"""
+
+    def forward(self, x, position_ids):
+        # difference to the original RoPE: inv_freq is recomputed when the sequence length > original length
+        seq_len = torch.max(position_ids) + 1
+        if seq_len > self.max_position_embeddings:
+            base = self.base * (
+                (self.scaling_factor * seq_len / self.max_position_embeddings) - (self.scaling_factor - 1)
+            ) ** (self.dim / (self.dim - 2))
+            inv_freq = 1.0 / (
+                base ** (torch.arange(0, self.dim, 2, dtype=torch.int64).float().to(x.device) / self.dim)
+            )
+            self.register_buffer("inv_freq", inv_freq, persistent=False)  # TODO joao: this may break with compilation
+
+        cos, sin = super().forward(x, position_ids)
+        return cos, sin
 
 
 # Copied from transformers.models.llama.modeling_llama.rotate_half
@@ -138,18 +177,40 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     return q_embed, k_embed
 
 
-class MistralMLP(nn.Module):
+# Copied from transformers.models.llama.modeling_llama.LlamaMLP with Llama->Chameleon
+class ChameleonMLP(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
+        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=config.mlp_bias)
+        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=config.mlp_bias)
+        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=config.mlp_bias)
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def forward(self, hidden_state):
-        return self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))
+    # Ignore copy
+    def forward(self, x):
+        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        return down_proj
+
+
+class ChameleonLayerNorm(nn.LayerNorm):
+    """
+    LayerNorm but computes stats only over the last dim because Chameleon applies gamma and beta
+    from each shard separately to each head, instead of reducing. We can apply each head's own
+    gamma/beta by repeat-interleaving weights from each shard, but the stats have to be computed
+    in the last dimension. This module applies gamma/beta manually to fulfill this requirement.
+    """
+
+    def __init__(self, hidden_size, *args, **kwargs):
+        super().__init__(hidden_size, *args, **kwargs)
+        self.normalized_shape = (hidden_size[-1],)
+
+    def forward(self, hidden_states):
+        hidden_states = F.layer_norm(hidden_states, self.normalized_shape, None, None, eps=1e-5)
+        hidden_states = hidden_states * self.weight + self.bias
+        return hidden_states
 
 
 # Copied from transformers.models.llama.modeling_llama.repeat_kv
@@ -165,13 +226,10 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
-class MistralAttention(nn.Module):
-    """
-    Multi-headed attention from 'Attention Is All You Need' paper. Modified to use sliding window attention: Longformer
-    and "Generating Long Sequences with Sparse Transformers".
-    """
+class ChameleonAttention(nn.Module):
+    """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: MistralConfig, layer_idx: Optional[int] = None):
+    def __init__(self, config: ChameleonConfig, layer_idx: Optional[int] = None):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -185,23 +243,55 @@ class MistralAttention(nn.Module):
         self.attention_dropout = config.attention_dropout
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = config.head_dim
+        self.head_dim = self.hidden_size // self.num_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
+        self.model_parallel_size = config.model_parallel_size
 
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
+        if (self.head_dim * self.num_heads) != self.hidden_size:
+            raise ValueError(
+                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
+                f" and `num_heads`: {self.num_heads})."
+            )
 
-        self.rotary_emb = MistralRotaryEmbedding(
-            self.head_dim,
-            max_position_embeddings=self.max_position_embeddings,
-            base=self.rope_theta,
-        )
+        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=config.attention_bias)
+        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
+        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
+        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=config.attention_bias)
+        self.q_norm = ChameleonLayerNorm((self.num_heads, self.head_dim))
+        self.k_norm = ChameleonLayerNorm((self.num_key_value_heads, self.head_dim))
+        self._init_rope()
+
+    # Copied from transformers.models.llama.modeling_llama.LlamaAttention._init_rope with Llama->Chameleon
+    def _init_rope(self):
+        if self.config.rope_scaling is None:
+            self.rotary_emb = ChameleonRotaryEmbedding(
+                self.head_dim,
+                max_position_embeddings=self.max_position_embeddings,
+                base=self.rope_theta,
+            )
+        else:
+            scaling_type = self.config.rope_scaling["type"]
+            scaling_factor = self.config.rope_scaling["factor"]
+            if scaling_type == "linear":
+                self.rotary_emb = ChameleonLinearScalingRotaryEmbedding(
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
+                    base=self.rope_theta,
+                )
+            elif scaling_type == "dynamic":
+                self.rotary_emb = ChameleonDynamicNTKScalingRotaryEmbedding(
+                    self.head_dim,
+                    max_position_embeddings=self.max_position_embeddings,
+                    scaling_factor=scaling_factor,
+                    base=self.rope_theta,
+                )
+            else:
+                raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
     def forward(
         self,
@@ -212,6 +302,7 @@ class MistralAttention(nn.Module):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
 
@@ -219,15 +310,21 @@ class MistralAttention(nn.Module):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = query_states.reshape(-1, self.num_heads, self.head_dim)
+        query_states = self.q_norm(query_states)
+
+        key_states = key_states.reshape(-1, self.num_key_value_heads, self.head_dim)
+        key_states = self.k_norm(key_states)
+
+        query_states = query_states.reshape(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key_states = key_states.reshape(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         cos, sin = self.rotary_emb(value_states, position_ids)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
-            # sin and cos are specific to RoPE models; cache_position needed for the static cache
+            # sin and cos are specific to RoPE models; position_ids needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
@@ -241,7 +338,7 @@ class MistralAttention(nn.Module):
             attn_weights = attn_weights + causal_mask
 
         # upcast attention to fp32
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
 
@@ -252,8 +349,7 @@ class MistralAttention(nn.Module):
             )
 
         attn_output = attn_output.transpose(1, 2).contiguous()
-
-        attn_output = attn_output.view(bsz, q_len, -1)
+        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
         attn_output = self.o_proj(attn_output)
 
         if not output_attentions:
@@ -262,14 +358,14 @@ class MistralAttention(nn.Module):
         return attn_output, attn_weights, past_key_value
 
 
-class MistralFlashAttention2(MistralAttention):
+# Copied from transformers.models.llama.modeling_llama.LlamaFlashAttention2 with Llama->Chameleon
+class ChameleonFlashAttention2(ChameleonAttention):
     """
-    Mistral flash attention module. This module inherits from `MistralAttention` as the weights of the module stays
+    Chameleon flash attention module. This module inherits from `ChameleonAttention` as the weights of the module stays
     untouched. The only required change would be on the forward pass where it needs to correctly call the public API of
     flash attention and deal with padding tokens in case the input contains any of them.
     """
 
-    # Copied from transformers.models.llama.modeling_llama.LlamaFlashAttention2.__init__
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -278,16 +374,18 @@ class MistralFlashAttention2(MistralAttention):
         # Beware that with flash_attn<2.1, using q_seqlen != k_seqlen (except for the case q_seqlen == 1) produces a wrong mask (top-left).
         self._flash_attn_uses_top_left_mask = not is_flash_attn_greater_or_equal_2_10()
 
+    # Ignore copy
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.LongTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
-    ):
+        **kwargs,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         if isinstance(past_key_value, StaticCache):
             raise ValueError(
                 "`static` cache implementation is not compatible with `attn_implementation==flash_attention_2` "
@@ -302,54 +400,41 @@ class MistralFlashAttention2(MistralAttention):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
+        query_states = query_states.reshape(-1, self.num_heads, self.head_dim)
+        query_states = self.q_norm(query_states)
+
+        key_states = key_states.reshape(-1, self.num_key_value_heads, self.head_dim)
+        key_states = self.k_norm(key_states)
+
+        # Flash attention requires the input to have the shape
+        # batch_size x seq_length x head_dim x hidden_dim
+        # therefore we just need to keep the original shape
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-
-        kv_seq_len = key_states.shape[-2]
-        if past_key_value is not None:
-            kv_seq_len += cache_position[0]
 
         cos, sin = self.rotary_emb(value_states, position_ids)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
-            # Activate slicing cache only if the config has a value `sliding_windows` attribute
-            cache_has_contents = past_key_value.get_seq_length(self.layer_idx) > 0
-            if (
-                getattr(self.config, "sliding_window", None) is not None
-                and kv_seq_len > self.config.sliding_window
-                and cache_has_contents
-            ):
-                slicing_tokens = 1 - self.config.sliding_window
-
-                past_key = past_key_value[self.layer_idx][0]
-                past_value = past_key_value[self.layer_idx][1]
-
-                past_key = past_key[:, :, slicing_tokens:, :].contiguous()
-                past_value = past_value[:, :, slicing_tokens:, :].contiguous()
-
-                if past_key.shape[-2] != self.config.sliding_window - 1:
-                    raise ValueError(
-                        f"past key must have a shape of (`batch_size, num_heads, self.config.sliding_window-1, head_dim`), got"
-                        f" {past_key.shape}"
-                    )
-
-                if attention_mask is not None:
-                    attention_mask = attention_mask[:, slicing_tokens:]
-                    attention_mask = torch.cat([attention_mask, torch.ones_like(attention_mask[:, -1:])], dim=-1)
-
-            cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
+            # sin and cos are specific to RoPE models; position_ids needed for the static cache
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        # repeat k/v heads if n_kv_heads < n_heads
-        key_states = repeat_kv(key_states, self.num_key_value_groups)
-        value_states = repeat_kv(value_states, self.num_key_value_groups)
-        dropout_rate = 0.0 if not self.training else self.attention_dropout
+        # TODO: These transpose are quite inefficient but Flash Attention requires the layout [batch_size, sequence_length, num_heads, head_dim].
+        # We would need to refactor the KV cache to be able to avoid many of these transpose/reshape/view.
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
+
+        dropout_rate = self.attention_dropout if self.training else 0.0
 
         # In PEFT, usually we cast the layer norms in float32 for training stability reasons
         # therefore the input hidden states gets silently casted in float32. Hence, we need
-        # cast them back in float16 just to be sure everything works as expected.
+        # cast them back in the correct dtype just to be sure everything works as expected.
+        # This might slowdown training & inference so it is recommended to not cast the LayerNorms
+        # in fp32. (ChameleonRMSNorm handles it correctly)
+
         input_dtype = query_states.dtype
         if input_dtype == torch.float32:
             if torch.is_autocast_enabled():
@@ -370,11 +455,6 @@ class MistralFlashAttention2(MistralAttention):
             key_states = key_states.to(target_dtype)
             value_states = value_states.to(target_dtype)
 
-        # Reashape to the expected shape for Flash Attention
-        query_states = query_states.transpose(1, 2)
-        key_states = key_states.transpose(1, 2)
-        value_states = value_states.transpose(1, 2)
-
         attn_output = _flash_attention_forward(
             query_states,
             key_states,
@@ -382,12 +462,12 @@ class MistralFlashAttention2(MistralAttention):
             attention_mask,
             q_len,
             dropout=dropout_rate,
-            sliding_window=getattr(self.config, "sliding_window", None),
+            sliding_window=getattr(self, "sliding_window", None),
             use_top_left_mask=self._flash_attn_uses_top_left_mask,
             is_causal=self.is_causal,
         )
 
-        attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim).contiguous()
+        attn_output = attn_output.reshape(bsz, q_len, -1).contiguous()
         attn_output = self.o_proj(attn_output)
 
         if not output_attentions:
@@ -396,15 +476,14 @@ class MistralFlashAttention2(MistralAttention):
         return attn_output, attn_weights, past_key_value
 
 
-# Copied from transformers.models.llama.modeling_llama.LlamaSdpaAttention with Llama->Mistral
-class MistralSdpaAttention(MistralAttention):
+class ChameleonSdpaAttention(ChameleonAttention):
     """
-    Mistral attention module using torch.nn.functional.scaled_dot_product_attention. This module inherits from
-    `MistralAttention` as the weights of the module stays untouched. The only changes are on the forward pass to adapt to
+    Chameleon attention module using torch.nn.functional.scaled_dot_product_attention. This module inherits from
+    `ChameleonAttention` as the weights of the module stays untouched. The only changes are on the forward pass to adapt to
     SDPA API.
     """
 
-    # Adapted from MistralAttention.forward
+    # Adapted from ChameleonAttention.forward
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -414,12 +493,11 @@ class MistralSdpaAttention(MistralAttention):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
-        **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         if output_attentions:
             # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
             logger.warning_once(
-                "MistralModel is using MistralSdpaAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, "
+                "ChameleonModel is using ChameleonSdpaAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, "
                 'but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
             )
             return super().forward(
@@ -438,15 +516,21 @@ class MistralSdpaAttention(MistralAttention):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = query_states.reshape(-1, self.num_heads, self.head_dim)
+        query_states = self.q_norm(query_states)
+
+        key_states = key_states.reshape(-1, self.num_key_value_heads, self.head_dim)
+        key_states = self.k_norm(key_states)
+
+        query_states = query_states.reshape(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key_states = key_states.reshape(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         cos, sin = self.rotary_emb(value_states, position_ids)
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, None)
 
         if past_key_value is not None:
-            # sin and cos are specific to RoPE models; cache_position needed for the static cache
+            # sin and cos are specific to RoPE models; position_ids needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
@@ -454,7 +538,7 @@ class MistralSdpaAttention(MistralAttention):
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
         causal_mask = attention_mask
-        if attention_mask is not None:
+        if attention_mask is not None and cache_position is not None:
             causal_mask = causal_mask[:, :, :, : key_states.shape[-2]]
 
         # SDPA with memory-efficient backend is currently (torch==2.1.2) bugged with non-contiguous inputs with custom attn_mask,
@@ -478,31 +562,31 @@ class MistralSdpaAttention(MistralAttention):
         )
 
         attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.view(bsz, q_len, -1)
+        attn_output = attn_output.view(bsz, q_len, self.hidden_size)
 
         attn_output = self.o_proj(attn_output)
 
         return attn_output, None, past_key_value
 
 
-MISTRAL_ATTENTION_CLASSES = {
-    "eager": MistralAttention,
-    "flash_attention_2": MistralFlashAttention2,
-    "sdpa": MistralSdpaAttention,
+CHAMELEON_ATTENTION_CLASSES = {
+    "eager": ChameleonAttention,
+    "flash_attention_2": ChameleonFlashAttention2,
+    "sdpa": ChameleonSdpaAttention,
 }
 
 
-# Copied from transformers.models.llama.modeling_llama.LlamaDecoderLayer with Llama->Mistral, LLAMA->MISTRAL
-class MistralDecoderLayer(nn.Module):
-    def __init__(self, config: MistralConfig, layer_idx: int):
+# Copied from transformers.models.llama.modeling_llama.LlamaDecoderLayer with Llama->Chameleon, LLAMA->CHAMELEON
+class ChameleonDecoderLayer(nn.Module):
+    def __init__(self, config: ChameleonConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
 
-        self.self_attn = MISTRAL_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
+        self.self_attn = CHAMELEON_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
 
-        self.mlp = MistralMLP(config)
-        self.input_layernorm = MistralRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = MistralRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.mlp = ChameleonMLP(config)
+        self.input_layernorm = ChameleonRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = ChameleonRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -568,7 +652,316 @@ class MistralDecoderLayer(nn.Module):
         return outputs
 
 
-MISTRAL_START_DOCSTRING = r"""
+class ChameleonSwinDecoderLayer(nn.Module):
+    def __init__(self, config: ChameleonConfig, layer_idx: int):
+        super().__init__()
+        self.hidden_size = config.hidden_size
+
+        self.self_attn = CHAMELEON_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
+
+        self.mlp = ChameleonMLP(config)
+        self.input_layernorm = ChameleonRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = ChameleonRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        output_attentions: Optional[bool] = False,
+        use_cache: Optional[bool] = False,
+        cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
+    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+        """
+        Args:
+            hidden_states (`torch.FloatTensor`):
+                input to the layer of shape `(batch, seq_len, embed_dim)`
+            attention_mask (`torch.FloatTensor`, *optional*):
+                attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
+                query_sequence_length, key_sequence_length)` if default attention is used.
+            position_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+                Indices of positions of each input sequence tokens in the position embeddings
+            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                returned tensors for more detail.
+            use_cache (`bool`, *optional*):
+                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+                (see `past_key_values`).
+            cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
+                Indices depicting the position of the input sequence tokens in the sequence.
+        """
+
+        residual = hidden_states
+
+        # Self Attention
+        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_value=past_key_value,
+            output_attentions=output_attentions,
+            use_cache=use_cache,
+            cache_position=cache_position,
+            **kwargs,
+        )
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states = residual + hidden_states
+        # Fully Connected
+        residual = hidden_states
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states = residual + hidden_states
+        outputs = (hidden_states,)
+
+        if output_attentions:
+            outputs += (self_attn_weights,)
+
+        if use_cache:
+            outputs += (present_key_value,)
+
+        return outputs
+
+
+class ChameleonVQVAEVectorQuantizer(nn.Module):
+    """
+    A module for vector quantization using learned embedding vectors.
+
+    This module implements the quantization process similar to te one described in
+    the VQ-VAE (Vector Quantized Variational AutoEncoder) paper. It quantizes continuous
+    input vectors into discrete codebook vectors, which are learned during training.
+    Current implementation improves over previous ones by avoiding costly matrix multiplications
+    and allowing for post-hoc remapping of indices.
+    """
+
+    def __init__(self, config):
+        super().__init__()
+        self.num_embeddings = config.num_embeddings
+        self.embedding_dim = config.embed_dim
+        self.beta = getattr(config, "beta", 0.25)
+
+        self.embedding = nn.Embedding(self.num_embeddings, self.embedding_dim)
+        self.re_embed = self.num_embeddings
+
+    def forward(self, hidden_state: torch.Tensor):
+        hidden_state = hidden_state.permute(0, 2, 3, 1).contiguous()
+        hidden_state_flattened = hidden_state.view(-1, self.embedding_dim)
+
+        # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
+        distances = (
+            torch.sum(hidden_state_flattened**2, dim=1, keepdim=True)
+            + torch.sum(self.embedding.weight**2, dim=1)
+            - 2 * torch.einsum("bd,dn->bn", hidden_state_flattened, self.embedding.weight.transpose(0, 1))
+        )
+
+        min_encoding_indices = torch.argmin(distances, dim=1)
+        hidden_state_quant = self.embedding(min_encoding_indices).view(hidden_state.shape)
+
+        # compute loss for embedding
+        loss = torch.mean((hidden_state_quant.detach() - hidden_state) ** 2) + self.beta * torch.mean(
+            (hidden_state_quant - hidden_state.detach()) ** 2
+        )
+
+        # preserve gradients
+        hidden_state_quant = hidden_state + (hidden_state_quant - hidden_state).detach()
+
+        # reshape back to match original input shape
+        hidden_state_quant = hidden_state_quant.permute(0, 3, 1, 2).contiguous()
+
+        return hidden_state_quant, loss, min_encoding_indices
+
+
+class ChameleonVQVAEEncoderConvDownsample(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=0)
+
+    def forward(self, hidden_states):
+        # no asymmetric padding in torch conv, must do it ourselves
+        hidden_states = F.pad(hidden_states, pad=(0, 1, 0, 1), mode="constant", value=0)
+        hidden_states = self.conv(hidden_states)
+        return hidden_states
+
+
+class ChameleonVQVAEEncoderResnetBlock(nn.Module):
+    def __init__(
+        self,
+        config,
+        in_channels,
+        out_channels=None,
+        conv_shortcut=False,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = in_channels if out_channels is None else out_channels
+        self.use_conv_shortcut = conv_shortcut
+
+        self.norm1 = torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+        self.conv1 = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        self.norm2 = torch.nn.GroupNorm(num_groups=32, num_channels=out_channels, eps=1e-6, affine=True)
+        self.dropout = torch.nn.Dropout(config.dropout)
+        self.conv2 = torch.nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        if self.in_channels != self.out_channels:
+            if self.use_conv_shortcut:
+                self.conv_shortcut = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+            else:
+                self.nin_shortcut = torch.nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, hidden_states):
+        residual = hidden_states
+        hidden_states = self.norm1(hidden_states)
+        hidden_states *= torch.sigmoid(hidden_states)
+        hidden_states = self.conv1(hidden_states)
+
+        hidden_states = self.norm2(hidden_states)
+        hidden_states *= torch.sigmoid(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.conv2(hidden_states)
+
+        if self.in_channels != self.out_channels:
+            if self.use_conv_shortcut:
+                residual = self.conv_shortcut(residual)
+            else:
+                residual = self.nin_shortcut(residual)
+
+        return residual + hidden_states
+
+
+class ChameleonVQVAEEncoderAttnBlock(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.in_channels = in_channels
+
+        self.norm = torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+        self.q = torch.nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+        self.k = torch.nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+        self.v = torch.nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+        self.proj_out = torch.nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, hidden_states):
+        residual = hidden_states
+        hidden_states = self.norm(hidden_states)
+        query_states = self.q(hidden_states)
+        key_states = self.k(hidden_states)
+        value_states = self.v(hidden_states)
+
+        # compute attention
+        batch_size, channels, height, width = query_states.shape
+        query_states = query_states.reshape(batch_size, channels, height * width).permute(0, 2, 1)
+        key_states = key_states.reshape(batch_size, channels, height * width)
+        attn_weights = torch.bmm(query_states, key_states)
+        attn_weights = attn_weights * (int(channels) ** (-0.5))
+        attn_weights = F.softmax(attn_weights, dim=2)
+
+        # attend to values
+        value_states = value_states.reshape(batch_size, channels, height * width)
+        attn_weights = attn_weights.permute(0, 2, 1)
+        attn_output = torch.bmm(value_states, attn_weights).reshape(batch_size, channels, height, width)
+
+        attn_output = self.proj_out(attn_output)
+        return residual + attn_output
+
+
+class ChameleonVQVAEEncoder(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        self.num_resolutions = len(config.channel_multiplier)
+        self.num_res_blocks = config.num_res_blocks
+        base_channels = config.base_channels
+        resolution = config.resolution
+        in_channels = config.in_channels
+        double_latent = config.double_latent
+        latent_channels = config.latent_channels
+        channel_multiplier = config.channel_multiplier
+
+        self.conv_in = torch.nn.Conv2d(in_channels, base_channels, kernel_size=3, stride=1, padding=1)
+
+        curr_res = resolution
+        in_channel_multiplier = (1,) + tuple(channel_multiplier)
+        self.in_channel_multiplier = in_channel_multiplier
+        self.down = nn.ModuleList()
+        for i_level in range(self.num_resolutions):
+            block = nn.ModuleList()
+            attn = nn.ModuleList()
+            block_in = base_channels * in_channel_multiplier[i_level]
+            block_out = base_channels * channel_multiplier[i_level]
+            for i_block in range(self.num_res_blocks):
+                block.append(
+                    ChameleonVQVAEEncoderResnetBlock(
+                        config=config,
+                        in_channels=block_in,
+                        out_channels=block_out,
+                    )
+                )
+                block_in = block_out
+                if (
+                    config.attn_resolutions is not None
+                    and curr_res in config.attn_resolutions
+                    and config.attn_type == "vanilla"
+                ):
+                    attn.append(ChameleonVQVAEEncoderAttnBlock(block_in))
+
+            down = nn.Module()
+            down.block = block
+            down.attn = attn
+            if i_level != self.num_resolutions - 1:
+                down.downsample = ChameleonVQVAEEncoderConvDownsample(block_in)
+                curr_res = curr_res // 2
+            self.down.append(down)
+
+        self.mid = nn.Module()
+        self.mid.block_1 = ChameleonVQVAEEncoderResnetBlock(
+            config=config,
+            in_channels=block_in,
+            out_channels=block_in,
+        )
+        self.mid.attn_1 = ChameleonVQVAEEncoderAttnBlock(block_in) if config.attn_type == "vanilla" else nn.Identity()
+        self.mid.block_2 = ChameleonVQVAEEncoderResnetBlock(
+            config=config,
+            in_channels=block_in,
+            out_channels=block_in,
+        )
+
+        self.norm_out = torch.nn.GroupNorm(num_groups=32, num_channels=block_in, eps=1e-6, affine=True)
+        self.conv_out = torch.nn.Conv2d(
+            block_in,
+            2 * latent_channels if double_latent else latent_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+
+    def forward(self, pixel_values: torch.LongTensor):
+        # downsampling
+        hidden_states = [self.conv_in(pixel_values)]
+        for i_level in range(self.num_resolutions):
+            for i_block in range(self.num_res_blocks):
+                hidden_state = self.down[i_level].block[i_block](
+                    hidden_states[-1],
+                )
+                if len(self.down[i_level].attn) > 0:
+                    hidden_state = self.down[i_level].attn[i_block](hidden_state)
+                hidden_states.append(hidden_state)
+            if i_level != self.num_resolutions - 1:
+                hidden_states.append(self.down[i_level].downsample(hidden_states[-1]))
+
+        # middle
+        last_hidden_state = hidden_states[-1]
+        last_hidden_state = self.mid.block_1(last_hidden_state)
+        last_hidden_state = self.mid.attn_1(last_hidden_state)
+        last_hidden_state = self.mid.block_2(last_hidden_state)
+
+        # end
+        last_hidden_state = self.norm_out(last_hidden_state)
+        last_hidden_state *= torch.sigmoid(last_hidden_state)
+        last_hidden_state = self.conv_out(last_hidden_state)
+        return last_hidden_state
+
+
+CHAMELEON_VQ_START_DOCSTRING = r"""
     This model inherits from [`PreTrainedModel`]. Check the superclass documentation for the generic methods the
     library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
     etc.)
@@ -578,7 +971,7 @@ MISTRAL_START_DOCSTRING = r"""
     and behavior.
 
     Parameters:
-        config ([`MistralConfig`]):
+        config ([`ChameleonVQVAEConfig`]):
             Model configuration class with all the parameters of the model. Initializing with a config file does not
             load the weights associated with the model, only the configuration. Check out the
             [`~PreTrainedModel.from_pretrained`] method to load the model weights.
@@ -586,23 +979,129 @@ MISTRAL_START_DOCSTRING = r"""
 
 
 @add_start_docstrings(
-    "The bare Mistral Model outputting raw hidden-states without any specific head on top.",
-    MISTRAL_START_DOCSTRING,
+    """The VQ-VAE model used in Chameleon for encoding/decoding images into discrete tokens.
+    This model follows the "Make-a-scene: Scene-based text-to-image generation with human priors" paper from
+    [ Oran Gafni, Adam Polyak, Oron Ashual, Shelly Sheynin, Devi Parikh, and Yaniv Taigman](https://arxiv.org/abs/2203.13131).
+    """,
+    CHAMELEON_VQ_START_DOCSTRING,
 )
-class MistralPreTrainedModel(PreTrainedModel):
-    config_class = MistralConfig
+class ChameleonVQVAE(PreTrainedModel):
+    config_class = ChameleonVQVAEConfig
+    _no_split_modules = ["ChameleonVQVAEVectorQuantizer"]
+
+    def _init_weights(self, module):
+        std = self.config.initializer_range
+        if isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=std)
+        elif isinstance(module, nn.GroupNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, (nn.Linear, nn.Conv2d)):
+            module.weight.data.normal_(mean=0.0, std=std)
+            if module.bias is not None:
+                module.bias.data.zero_()
+
+    def __init__(self, config: ChameleonVQVAEConfig):
+        super().__init__(config)
+
+        self.encoder = ChameleonVQVAEEncoder(config)
+        self.quantize = ChameleonVQVAEVectorQuantizer(config)
+        self.quant_conv = torch.nn.Conv2d(config.latent_channels, config.embed_dim, 1)
+        self.post_quant_conv = torch.nn.Conv2d(config.embed_dim, config.latent_channels, 1)
+        self.eval()  # Chameleon's VQ model is frozen
+
+    def encode(self, pixel_values: torch.LongTensor):
+        hidden_states = self.encoder(pixel_values)
+        hidden_states = self.quant_conv(hidden_states)
+        quant, emb_loss, indices = self.quantize(hidden_states)
+        return quant, emb_loss, indices
+
+
+class ChameleonImageVocabularyMapping:
+    """
+    A class for mapping discrete image tokens from VQGAN to BPE tokens.
+    """
+
+    def __init__(self, vocab_map):
+        self.vocab_map = vocab_map
+        self.image_token_id = vocab_map.get("<image>")
+
+    @cached_property
+    def val2name(self):
+        return {v: k for k, v in self.vocab_map.items()}
+
+    @cached_property
+    def image_tokens(self):
+        return sorted([val for name, val in self.vocab_map.items() if name.startswith("IMGIMG")])
+
+    @cached_property
+    def bpe2img(self):
+        img_tkn_chr_mapping = {chr(ord("A") + i): str(i) for i in range(10)}
+
+        def remap(old_name: str) -> str:
+            return "".join(img_tkn_chr_mapping.get(c, c) for c in old_name[len("IMGIMG") : -1])
+
+        return {tok: int(remap(self.val2name[tok])) for tok in self.image_tokens}
+
+    @cached_property
+    def img2bpe(self):
+        return {v: k for k, v in self.bpe2img.items()}
+
+    @cached_property
+    def bpe2img_search_tensors(self):
+        return torch.tensor(sorted(self.bpe2img.keys())), torch.tensor(sorted(self.bpe2img.values()))
+
+    @cached_property
+    def img2bpe_mapping_tensor(self):
+        mapping = torch.zeros(max(self.img2bpe.keys()) + 1, dtype=torch.int)
+        for k, v in self.img2bpe.items():
+            mapping[k] = v
+        return mapping
+
+    def convert_img2bpe(self, img_batch: torch.Tensor) -> torch.Tensor:
+        device = img_batch.device
+        img_tokens = self.img2bpe_mapping_tensor[img_batch.to("cpu")]
+        return img_tokens.to(device)
+
+
+CHAMELEON_START_DOCSTRING = r"""
+    This model inherits from [`PreTrainedModel`]. Check the superclass documentation for the generic methods the
+    library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
+    etc.)
+
+    This model is also a PyTorch [torch.nn.Module](https://pytorch.org/docs/stable/nn.html#torch.nn.Module) subclass.
+    Use it as a regular PyTorch Module and refer to the PyTorch documentation for all matter related to general usage
+    and behavior.
+
+    Parameters:
+        config ([`ChameleonConfig`]):
+            Model configuration class with all the parameters of the model. Initializing with a config file does not
+            load the weights associated with the model, only the configuration. Check out the
+            [`~PreTrainedModel.from_pretrained`] method to load the model weights.
+"""
+
+
+@add_start_docstrings(
+    "The bare chameleon Model outputting raw hidden-states without any specific head on top.",
+    CHAMELEON_START_DOCSTRING,
+)
+class ChameleonPreTrainedModel(PreTrainedModel):
+    config_class = ChameleonConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
-    _no_split_modules = ["MistralDecoderLayer"]
-    _skip_keys_device_placement = "past_key_values"
+    _no_split_modules = ["ChameleonDecoderLayer", "ChameleonSwinDecoderLayer"]
+    _skip_keys_device_placement = ["past_key_values", "causal_mask"]
     _supports_flash_attn_2 = True
     _supports_sdpa = True
+    _supports_quantized_cache = True
     _supports_cache_class = True
     _supports_static_cache = True
 
     def _init_weights(self, module):
         std = self.config.initializer_range
-        if isinstance(module, nn.Linear):
+        if isinstance(module, ChameleonVQVAE):
+            module.apply(module._init_weights)
+        elif isinstance(module, (nn.Linear, nn.Conv2d)):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.bias is not None:
                 module.bias.data.zero_()
@@ -612,7 +1111,7 @@ class MistralPreTrainedModel(PreTrainedModel):
                 module.weight.data[module.padding_idx].zero_()
 
 
-MISTRAL_INPUTS_DOCSTRING = r"""
+CHAMELEON_INPUTS_DOCSTRING = r"""
     Args:
         input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
             Indices of input sequence tokens in the vocabulary. Padding will be ignored by default should you provide
@@ -622,6 +1121,9 @@ MISTRAL_INPUTS_DOCSTRING = r"""
             [`PreTrainedTokenizer.__call__`] for details.
 
             [What are input IDs?](../glossary#input-ids)
+        pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, image_size, image_size)):
+            The tensors corresponding to the input images. Pixel values can be obtained using
+            [`AutoImageProcessor`]. See [`ChameleonImageProcessor.__call__`] for details.
         attention_mask (`torch.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
             Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
 
@@ -633,7 +1135,7 @@ MISTRAL_INPUTS_DOCSTRING = r"""
             Indices can be obtained using [`AutoTokenizer`]. See [`PreTrainedTokenizer.encode`] and
             [`PreTrainedTokenizer.__call__`] for details.
 
-            If `past_key_values` is used, optionally only the last `decoder_input_ids` have to be input (see
+            If `past_key_values` is used, optionally only the last `input_ids` have to be input (see
             `past_key_values`).
 
             If you want to change padding behavior, you should read [`modeling_opt._prepare_decoder_attention_mask`]
@@ -647,20 +1149,12 @@ MISTRAL_INPUTS_DOCSTRING = r"""
             config.n_positions - 1]`.
 
             [What are position IDs?](../glossary#position-ids)
-        past_key_values (`Cache` or `tuple(tuple(torch.FloatTensor))`, *optional*):
+        past_key_values (`Cache`, *optional*):
             Pre-computed hidden-states (key and values in the self-attention blocks and in the cross-attention
             blocks) that can be used to speed up sequential decoding. This typically consists in the `past_key_values`
             returned by the model at a previous stage of decoding, when `use_cache=True` or `config.use_cache=True`.
 
-            Two formats are allowed:
-            - a [`~cache_utils.Cache`] instance;
-            - Tuple of `tuple(torch.FloatTensor)` of length `config.n_layers`, with each tuple having 2 tensors of
-            shape `(batch_size, num_heads, sequence_length, embed_size_per_head)`). This is also known as the legacy
-            cache format.
-
-            The model will output the same cache format that is fed as input. If no `past_key_values` are passed, the
-            legacy cache format will be returned.
-
+            Should always be a [`~cache_utils.Cache`] instance and the model will output the same cache instance.
             If `past_key_values` are used, the user can optionally input only the last `input_ids` (those that don't
             have their past key value states given to this model) of shape `(batch_size, 1)` instead of all `input_ids`
             of shape `(batch_size, sequence_length)`.
@@ -679,34 +1173,40 @@ MISTRAL_INPUTS_DOCSTRING = r"""
             more detail.
         return_dict (`bool`, *optional*):
             Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
+        cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
+            Indices depicting the position of the input sequence tokens in the sequence. Contrarily to `position_ids`,
+            this tensor is not affected by padding. It is used to update the cache in the correct position and to infer
+            the complete sequence length.
 """
 
 
 @add_start_docstrings(
-    "The bare Mistral Model outputting raw hidden-states without any specific head on top.",
-    MISTRAL_START_DOCSTRING,
+    "The bare chameleon Model outputting raw hidden-states without any specific head on top.",
+    CHAMELEON_START_DOCSTRING,
 )
-class MistralModel(MistralPreTrainedModel):
+class ChameleonModel(ChameleonPreTrainedModel):
     """
-    Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`MistralDecoderLayer`]
+    Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`ChameleonDecoderLayer`]
 
     Args:
-        config: MistralConfig
+        config: ChameleonConfig
     """
 
-    def __init__(self, config: MistralConfig):
+    def __init__(self, config: ChameleonConfig):
         super().__init__(config)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+        self.vocabulary_mapping = ChameleonImageVocabularyMapping(config.vocabulary_map)
+        decoder_layer = ChameleonDecoderLayer if not self.config.swin_norm else ChameleonSwinDecoderLayer
         self.layers = nn.ModuleList(
-            [MistralDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [decoder_layer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self._attn_implementation = config._attn_implementation
-        self.norm = MistralRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
+        self.norm = ChameleonRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.vqmodel = ChameleonVQVAE(config.vq_config)
         self.gradient_checkpointing = False
+
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -716,13 +1216,36 @@ class MistralModel(MistralPreTrainedModel):
     def set_input_embeddings(self, value):
         self.embed_tokens = value
 
-    @add_start_docstrings_to_model_forward(MISTRAL_INPUTS_DOCSTRING)
+    def get_image_tokens(self, pixel_values: torch.FloatTensor):
+        """
+        Tokenizes images into discrete tokens with VQGAN module. Converts
+        obtained image tokens into BPE tokens and wraps with "boi" and "eoi"
+        special tokens.
+
+        Args:
+            pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, image_size, image_size)):
+                The tensors corresponding to the input images.
+        """
+        batch_size = pixel_values.shape[0]
+        _, _, image_toks = self.vqmodel.encode(pixel_values)
+        bpe_toks = self.vocabulary_mapping.convert_img2bpe(image_toks)
+        bpe_toks = bpe_toks.view(batch_size, -1)
+        return bpe_toks
+
+    @add_start_docstrings_to_model_forward(CHAMELEON_INPUTS_DOCSTRING)
+    @add_code_sample_docstrings(
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=BaseModelOutputWithPast,
+        config_class=_CONFIG_FOR_DOC,
+        expected_output=_EXPECTED_OUTPUT_SHAPE,
+    )
     def forward(
         self,
         input_ids: torch.LongTensor = None,
+        pixel_values: torch.FloatTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
@@ -735,32 +1258,32 @@ class MistralModel(MistralPreTrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        # retrieve input_ids and inputs_embeds
+        if self.gradient_checkpointing and self.training and use_cache:
+            logger.warning_once(
+                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
+            )
+            use_cache = False
+
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError(
                 "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
             )
 
-        if self.gradient_checkpointing and self.training and use_cache:
-            logger.warning_once(
-                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
+        if pixel_values is not None and inputs_embeds is not None:
+            raise ValueError(
+                "You cannot specify both pixel_values and inputs_embeds at the same time, and must specify either one"
             )
-            use_cache = False
+
+        if pixel_values is not None:
+            image_tokens = self.get_image_tokens(pixel_values)
+            special_image_mask = input_ids == self.vocabulary_mapping.image_token_id
+            image_tokens = image_tokens.to(input_ids.device, input_ids.dtype)
+            input_ids = input_ids.masked_scatter(special_image_mask, image_tokens)
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
-
-        return_legacy_cache = False
-        if use_cache and not isinstance(past_key_values, Cache):
-            past_key_values = DynamicCache.from_legacy_cache(past_key_values)
-            return_legacy_cache = True
-            logger.warning_once(
-                "We detected that you are passing `past_key_values` as a tuple and this is deprecated and will be removed in v4.43. "
-                "Please use an appropriate `Cache` class (https://huggingface.co/docs/transformers/v4.41.3/en/internal/generation_utils#transformers.Cache)"
-            )
 
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
@@ -772,9 +1295,10 @@ class MistralModel(MistralPreTrainedModel):
             position_ids = cache_position.unsqueeze(0)
 
         causal_mask = self._update_causal_mask(
-            attention_mask, inputs_embeds, cache_position, past_key_values, use_cache, output_attentions
+            attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
         )
 
+        # embed positions
         hidden_states = inputs_embeds
 
         # decoder layers
@@ -822,12 +1346,13 @@ class MistralModel(MistralPreTrainedModel):
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-        if return_legacy_cache:
-            next_cache = next_cache.to_legacy_cache()
+        next_cache = None
+        if use_cache:
+            next_cache = next_decoder_cache
 
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
@@ -835,13 +1360,13 @@ class MistralModel(MistralPreTrainedModel):
             attentions=all_self_attns,
         )
 
+    # Copied from transformers.models.llama.modeling_llama.LlamaModel._update_causal_mask
     def _update_causal_mask(
         self,
         attention_mask: torch.Tensor,
         input_tensor: torch.Tensor,
         cache_position: torch.Tensor,
         past_key_values: Cache,
-        use_cache: bool,
         output_attentions: bool,
     ):
         # TODO: As of torch==2.2.0, the `attention_mask` passed to the model in `generate` is 2D and of dynamic length even when the static
@@ -849,15 +1374,7 @@ class MistralModel(MistralPreTrainedModel):
         # (`recording cudagraph tree for symint key 13`, etc.), which is VERY slow. A workaround is `@torch.compiler.disable`, but this prevents using
         # `fullgraph=True`. See more context in https://github.com/huggingface/transformers/pull/29114
 
-        if self._attn_implementation == "flash_attention_2":
-            if attention_mask is not None and use_cache:
-                is_padding_right = attention_mask[:, -1].sum().item() != input_tensor.size()[0]
-                if is_padding_right:
-                    raise ValueError(
-                        "You are attempting to perform batched generation with padding_side='right'"
-                        " this may lead to unexpected behaviour for Flash Attention version of Mistral. Make sure to "
-                        " call `tokenizer.padding_side  = 'left'` before tokenizing the input. "
-                    )
+        if self.config._attn_implementation == "flash_attention_2":
             if attention_mask is not None and 0.0 in attention_mask:
                 return attention_mask
             return None
@@ -865,22 +1382,15 @@ class MistralModel(MistralPreTrainedModel):
         # For SDPA, when possible, we will rely on its `is_causal` argument instead of its `attn_mask` argument, in
         # order to dispatch on Flash Attention 2. This feature is not compatible with static cache, as SDPA will fail
         # to infer the attention mask.
-
-        # cache_position must be valid here no matter which cache we use
-        past_seen_tokens = cache_position[0] if past_key_values is not None else 0
+        past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
         using_static_cache = isinstance(past_key_values, StaticCache)
-        using_sliding_window_cache = isinstance(past_key_values, SlidingWindowCache)
 
-        if (
-            self.config._attn_implementation == "sdpa"
-            and not (using_static_cache or using_sliding_window_cache)
-            and not output_attentions
-        ):
+        # When output attentions is True, sdpa implementation's forward method calls the eager implementation's forward
+        if self.config._attn_implementation == "sdpa" and not using_static_cache and not output_attentions:
             if AttentionMaskConverter._ignore_causal_mask_sdpa(
                 attention_mask,
                 inputs_embeds=input_tensor,
                 past_key_values_length=past_seen_tokens,
-                sliding_window=self.config.sliding_window,
                 is_training=self.training,
             ):
                 return None
@@ -888,13 +1398,8 @@ class MistralModel(MistralPreTrainedModel):
         dtype, device = input_tensor.dtype, input_tensor.device
         min_dtype = torch.finfo(dtype).min
         sequence_length = input_tensor.shape[1]
-        # SlidingWindowCache
-        if using_sliding_window_cache:
-            target_length = max(sequence_length, self.config.sliding_window)
-        # StaticCache
-        elif using_static_cache:
+        if using_static_cache:
             target_length = past_key_values.get_max_length()
-        # DynamicCache or no cache
         else:
             target_length = (
                 attention_mask.shape[-1]
@@ -911,25 +1416,18 @@ class MistralModel(MistralPreTrainedModel):
             causal_mask = torch.full(
                 (sequence_length, target_length), fill_value=min_dtype, dtype=dtype, device=device
             )
-            exclude_mask = torch.arange(target_length, device=device) > cache_position.reshape(-1, 1)
-            if self.config.sliding_window is not None:
-                if not using_sliding_window_cache or sequence_length > self.config.sliding_window:
-                    exclude_mask.bitwise_or_(
-                        torch.arange(target_length, device=device)
-                        <= (cache_position.reshape(-1, 1) - self.config.sliding_window)
-                    )
-            causal_mask *= exclude_mask
+            if sequence_length != 1:
+                causal_mask = torch.triu(causal_mask, diagonal=1)
+            causal_mask *= torch.arange(target_length, device=device) > cache_position.reshape(-1, 1)
             causal_mask = causal_mask[None, None, :, :].expand(input_tensor.shape[0], 1, -1, -1)
             if attention_mask is not None:
                 causal_mask = causal_mask.clone()  # copy to contiguous memory for in-place edit
-                if attention_mask.dim() == 2:
-                    mask_length = attention_mask.shape[-1]
-                    padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :]
-                    padding_mask = padding_mask == 0
-                    causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(
-                        padding_mask, min_dtype
-                    )
-
+                mask_length = attention_mask.shape[-1]
+                padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :]
+                padding_mask = padding_mask == 0
+                causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(
+                    padding_mask, min_dtype
+                )
         if (
             self.config._attn_implementation == "sdpa"
             and attention_mask is not None
@@ -944,12 +1442,16 @@ class MistralModel(MistralPreTrainedModel):
         return causal_mask
 
 
-class MistralForCausalLM(MistralPreTrainedModel):
+@add_start_docstrings(
+    "Chameleon Model with a head on top used for outputting logits for next token prediction.",
+    CHAMELEON_START_DOCSTRING,
+)
+class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = MistralModel(config)
+        self.model = ChameleonModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
@@ -974,14 +1476,15 @@ class MistralForCausalLM(MistralPreTrainedModel):
     def get_decoder(self):
         return self.model
 
-    @add_start_docstrings_to_model_forward(MISTRAL_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(CHAMELEON_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids: torch.LongTensor = None,
+        pixel_values: torch.FloatTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
@@ -1002,20 +1505,23 @@ class MistralForCausalLM(MistralPreTrainedModel):
         Example:
 
         ```python
-        >>> from transformers import AutoTokenizer, MistralForCausalLM
+        >>> from transformers import ChameleonProcessor, ChameleonForConditionalGeneration
+        >>> import torch
+        >>> import requests
+        >>> from PIL import Image
 
-        >>> model = MistralForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.1")
-        >>> tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
+        >>> model = ChameleonForConditionalGeneration.from_pretrained("facebook/chameleon-7b", torch_dtype=torch.bfloat16)
+        >>> processor = ChameleonProcessor.from_pretrained("facebook/chameleon-7b")
 
-        >>> prompt = "Hey, are you conscious? Can you talk to me?"
-        >>> inputs = tokenizer(prompt, return_tensors="pt")
+        >>> prompt = "I used to know a lot about constellations when I was younger, but as I grew older, I forgot most of what I knew. These are the only two constellations that I really remember now.<image><image>I would like for you to tell me about 3 more constellations and give me a little bit of history about the constellation."
+        >>> image = Image.open(requests.get("https://nineplanets.org/wp-content/uploads/2020/12/the-big-dipper-1.jpg", stream=True).raw)
+        >>> image_2 = Image.open(requests.get("https://www.kxan.com/wp-content/uploads/sites/40/2020/10/ORION.jpg", stream=True).raw)
 
-        >>> # Generate
-        >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
-        >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
+        >>> inputs = processor(prompt, images=[image, image_2], return_tensors="pt").to(model.device, torch.bfloat16)
+
+        >>> generated_ids = model.generate(**inputs, max_new_tokens=100, do_sample=False)
+        >>> processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
         ```"""
-
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -1025,6 +1531,7 @@ class MistralForCausalLM(MistralPreTrainedModel):
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
             input_ids=input_ids,
+            pixel_values=pixel_values,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
@@ -1040,17 +1547,21 @@ class MistralForCausalLM(MistralPreTrainedModel):
         logits = self.lm_head(hidden_states)
         logits = logits.float()
 
+        # Disallow image tokens which does not include special begin-image and end-image tokens
+        image_tokens = self.model.vocabulary_mapping.image_tokens
+        logits[:, :, image_tokens] = torch.finfo(logits.dtype).min
+
         loss = None
         if labels is not None:
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
             shift_logits = shift_logits.view(-1, self.config.vocab_size)
             shift_labels = shift_labels.view(-1)
-            # Ensure tensors are on the same device
+            # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
-            loss_fct = CrossEntropyLoss()
             loss = loss_fct(shift_logits, shift_labels)
 
         if not return_dict:
@@ -1065,10 +1576,10 @@ class MistralForCausalLM(MistralPreTrainedModel):
             attentions=outputs.attentions,
         )
 
-    # Copied from transformers.models.llama.modeling_llama.LlamaForCausalLM.prepare_inputs_for_generation
     def prepare_inputs_for_generation(
         self,
         input_ids,
+        pixel_values=None,
         past_key_values=None,
         attention_mask=None,
         inputs_embeds=None,
@@ -1099,6 +1610,11 @@ class MistralForCausalLM(MistralPreTrainedModel):
         else:
             model_inputs = {"input_ids": input_ids.contiguous()}  # `contiguous()` needed for compilation use cases
 
+        if cache_position[0] == 0:
+            # If we're in cached decoding stage, pixel values should be `None` because input ids do not contain special image token anymore
+            # Otherwise we need pixel values to be passed to model
+            model_inputs["pixel_values"] = pixel_values
+
         model_inputs.update(
             {
                 "position_ids": position_ids,
@@ -1109,212 +1625,3 @@ class MistralForCausalLM(MistralPreTrainedModel):
             }
         )
         return model_inputs
-
-
-@add_start_docstrings(
-    """
-    The Mistral Model transformer with a sequence classification head on top (linear layer).
-
-    [`MistralForSequenceClassification`] uses the last token in order to do the classification, as other causal models
-    (e.g. GPT-2) do.
-
-    Since it does classification on the last token, it requires to know the position of the last token. If a
-    `pad_token_id` is defined in the configuration, it finds the last token that is not a padding token in each row. If
-    no `pad_token_id` is defined, it simply takes the last value in each row of the batch. Since it cannot guess the
-    padding tokens when `inputs_embeds` are passed instead of `input_ids`, it does the same (take the last value in
-    each row of the batch).
-    """,
-    MISTRAL_START_DOCSTRING,
-)
-# Copied from transformers.models.llama.modeling_llama.LlamaForSequenceClassification with Llama->Mistral, LLAMA->MISTRAL
-class MistralForSequenceClassification(MistralPreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        self.model = MistralModel(config)
-        self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
-
-        # Initialize weights and apply final processing
-        self.post_init()
-
-    def get_input_embeddings(self):
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
-
-    @add_start_docstrings_to_model_forward(MISTRAL_INPUTS_DOCSTRING)
-    def forward(
-        self,
-        input_ids: torch.LongTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
-        r"""
-        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        transformer_outputs = self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        hidden_states = transformer_outputs[0]
-        logits = self.score(hidden_states)
-
-        if input_ids is not None:
-            batch_size = input_ids.shape[0]
-        else:
-            batch_size = inputs_embeds.shape[0]
-
-        if self.config.pad_token_id is None and batch_size != 1:
-            raise ValueError("Cannot handle batch sizes > 1 if no padding token is defined.")
-        if self.config.pad_token_id is None:
-            sequence_lengths = -1
-        else:
-            if input_ids is not None:
-                # if no pad token found, use modulo instead of reverse indexing for ONNX compatibility
-                sequence_lengths = torch.eq(input_ids, self.config.pad_token_id).int().argmax(-1) - 1
-                sequence_lengths = sequence_lengths % input_ids.shape[-1]
-                sequence_lengths = sequence_lengths.to(logits.device)
-            else:
-                sequence_lengths = -1
-
-        pooled_logits = logits[torch.arange(batch_size, device=logits.device), sequence_lengths]
-
-        loss = None
-        if labels is not None:
-            labels = labels.to(logits.device)
-            if self.config.problem_type is None:
-                if self.num_labels == 1:
-                    self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-                    self.config.problem_type = "single_label_classification"
-                else:
-                    self.config.problem_type = "multi_label_classification"
-
-            if self.config.problem_type == "regression":
-                loss_fct = MSELoss()
-                if self.num_labels == 1:
-                    loss = loss_fct(pooled_logits.squeeze(), labels.squeeze())
-                else:
-                    loss = loss_fct(pooled_logits, labels)
-            elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(pooled_logits.view(-1, self.num_labels), labels.view(-1))
-            elif self.config.problem_type == "multi_label_classification":
-                loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(pooled_logits, labels)
-        if not return_dict:
-            output = (pooled_logits,) + transformer_outputs[1:]
-            return ((loss,) + output) if loss is not None else output
-
-        return SequenceClassifierOutputWithPast(
-            loss=loss,
-            logits=pooled_logits,
-            past_key_values=transformer_outputs.past_key_values,
-            hidden_states=transformer_outputs.hidden_states,
-            attentions=transformer_outputs.attentions,
-        )
-
-
-@add_start_docstrings(
-    """
-    The Mistral Model transformer with a token classification head on top (a linear layer on top of the hidden-states
-    output) e.g. for Named-Entity-Recognition (NER) tasks.
-    """,
-    MISTRAL_START_DOCSTRING,
-)
-# Copied from transformers.models.llama.modeling_llama.LlamaForTokenClassification with Llama->Mistral, LLAMA->MISTRAL
-class MistralForTokenClassification(MistralPreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        self.model = MistralModel(config)
-        if getattr(config, "classifier_dropout", None) is not None:
-            classifier_dropout = config.classifier_dropout
-        elif getattr(config, "hidden_dropout", None) is not None:
-            classifier_dropout = config.hidden_dropout
-        else:
-            classifier_dropout = 0.1
-        self.dropout = nn.Dropout(classifier_dropout)
-        self.score = nn.Linear(config.hidden_size, config.num_labels)
-
-        # Initialize weights and apply final processing
-        self.post_init()
-
-    def get_input_embeddings(self):
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
-
-    @add_start_docstrings_to_model_forward(MISTRAL_INPUTS_DOCSTRING)
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, TokenClassifierOutput]:
-        r"""
-        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        outputs = self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        sequence_output = outputs[0]
-        sequence_output = self.dropout(sequence_output)
-        logits = self.score(sequence_output)
-
-        loss = None
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
-        return TokenClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )

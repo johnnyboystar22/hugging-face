@@ -758,6 +758,8 @@
         title: BridgeTower
       - local: model_doc/bros
         title: BROS
+      - local: model_doc/chameleon
+        title: chameleon
       - local: model_doc/chinese_clip
         title: Chinese-CLIP
       - local: model_doc/clip
