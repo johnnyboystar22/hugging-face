@@ -139,6 +139,8 @@
     title: Troubleshoot
   - local: gguf
     title: Interoperability with GGUF files
+  - local: TikToken
+    title: Interoperability with TikToken files
   title: Developer guides
 - sections:
   - local: quantization/overview
