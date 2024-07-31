@@ -81,7 +81,7 @@ def write_json(text, path):
         json.dump(text, f)
 
 
-def write_model(model_path, input_base_path, model_size, chameleon_version=1, vqvae_path=None, run_tests=True):
+def write_model(model_path, input_base_path, model_size, chameleon_version=1, vqvae_path=None):
     os.makedirs(model_path, exist_ok=True)
     input_model_path = os.path.join(input_base_path, "models", model_size.lower())
     params_path = os.path.join(input_model_path, "params.json")
@@ -404,10 +404,6 @@ def write_model(model_path, input_base_path, model_size, chameleon_version=1, vq
     del vqgan_state_dict
     gc.collect()
 
-    if not run_tests:
-        print("Skipping tests...")
-        return
-
     # Short inference on a few examples to check if generation makes sense
     # taken from https://github.com/facebookresearch/chameleon/blob/7a72f40aa5f462965c8374f25257f55b65b25ff4/data/prompts_for_human_evaluations.jsonl
     print("Loading the checkpoint in a Chameleon model...")
@@ -483,11 +479,6 @@ def main():
         default=None,
         help="Location to write VQ-VAE model",
     )
-    parser.add_argument(
-        "--run_tests",
-        action="store_true",
-        help="Whether to run tests on the converted model.",
-    )
     args = parser.parse_args()
     write_model(
         model_path=args.output_dir,
@@ -495,7 +486,6 @@ def main():
         model_size=args.model_size,
         chameleon_version=args.chameleon_version,
         vqvae_path=args.vqvae_path,
-        run_tests=args.run_tests,
     )
 
 
