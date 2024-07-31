@@ -924,7 +924,9 @@ class Idefics2PerceiverLayer(nn.Module):
 
         self.input_latents_norm = Idefics2RMSNorm(self.hidden_size, eps=self.rms_norm_eps)
         self.input_context_norm = Idefics2RMSNorm(self.hidden_size, eps=self.rms_norm_eps)
-        self.self_attn = IDEFICS2_PERCEIVER_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx=layer_idx)
+        self.self_attn = IDEFICS2_PERCEIVER_ATTENTION_CLASSES[config.perceiver_config._attn_implementation](
+            config, layer_idx=layer_idx
+        )
         self.post_attention_layernorm = Idefics2RMSNorm(self.hidden_size, eps=self.rms_norm_eps)
         self.mlp = Idefics2MLP(
             hidden_size=config.text_config.hidden_size,
@@ -1134,7 +1136,18 @@ class Idefics2PreTrainedModel(PreTrainedModel):
             check_device_map=check_device_map,
             **kwargs,
         )
-        config.vision_config._attn_implementation = config._attn_implementation
+        # autoset-attn calls recursively all sub-configs (text-config, vision-config)
+        # and sets attn implementation if the config can be mapped bu auto-model
+        # Idefics2 vision config can't be mapped automatically so we set it manually here
+        # We can't set vision attn same as general attn, because the general attr will be sdpa if at
+        # least one sub-module (in this case LLM) supports sdpa, and we know vision/perceiver doesn't support yet
+        if hasattr(config, "vision_config"):
+            config.vision_config._attn_implementation = (
+                config._attn_implementation if config._attn_implementation != "sdpa" else "eager"
+            )
+            config.perceiver_config._attn_implementation = (
+                config._attn_implementation if config._attn_implementation != "sdpa" else "eager"
+            )
         return config
 
 
