@@ -1754,14 +1754,14 @@ class SuppressTokensInIndexRangeLogitsProcessor(LogitsProcessor):
             List of token ids to suppress during generation.
         start_index (`int`):
             The index at which to start suppressing tokens.
-        end_index (`int`, *optional*, defaults to `None`):
+        end_index (`int`, *optional*):
             The index at which to end suppressing tokens. If `None`, it will suppress tokens indefinitely.
         device (`str`, *optional*, defaults to `"cpu"`):
             The device to allocate the tensors.
     """
 
     def __init__(
-        self, suppress_tokens: List[int], start_index: int, end_index: int | None = None, device: str = "cpu"
+        self, suppress_tokens: List[int], start_index: int, end_index: Optional[int] = None, device: str = "cpu"
     ):
         self.suppress_tokens = torch.tensor(suppress_tokens, device=device)
         self.start_index = start_index
@@ -1769,11 +1769,11 @@ class SuppressTokensInIndexRangeLogitsProcessor(LogitsProcessor):
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
         current_index = input_ids.shape[1]
-        if self.start_index <= current_index < self.end_index:
-            suppress_tokens_mask = torch.zeros_like(scores, dtype=torch.bool)
-            suppress_tokens_mask[:, self.suppress_tokens] = True
-            return scores.masked_fill(suppress_tokens_mask, torch.finfo(scores.dtype).min)
-        return scores
+        if self.start_index > current_index or current_index > self.end_index:
+            return scores
+        suppress_tokens_mask = torch.zeros_like(scores, dtype=torch.bool)
+        suppress_tokens_mask[:, self.suppress_tokens] = True
+        return scores.masked_fill(suppress_tokens_mask, torch.finfo(scores.dtype).min)
 
 
 class SuppressTokensAtBeginLogitsProcessor(SuppressTokensInIndexRangeLogitsProcessor):
@@ -2565,8 +2565,8 @@ class AllowOnlyTokensInRelativeWindowLogitsProcessor(LogitsProcessor):
             The token id that triggers the window check.
         allowed_token_ids (`List[int]`):
             The list of token ids that are allowed at the specified relative window.
-        width (`int`):
-            The width of the window from the trigger token.
+        window_width (`int`):
+            The window_width of the window from the trigger token.
         exclusive (`bool`, *optional*, defaults to `False`):
             If `True`, the set of tokens allowed at this window will not be allowed anywhere else.
         device (`str`, *optional*, defaults to `cpu`):
@@ -2577,18 +2577,18 @@ class AllowOnlyTokensInRelativeWindowLogitsProcessor(LogitsProcessor):
         self,
         trigger_token_id: int,
         allowed_token_ids: List[int],
-        width: int,
+        window_width: int,
         exclusive: bool = False,
         device: str = "cpu",
     ):
         self.trigger_token_id = trigger_token_id
         self.allowed_token_ids = torch.tensor(allowed_token_ids, device=device).unsqueeze(0)
-        self.width = width
+        self.window_width = window_width
         self.exclusive = exclusive
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
-        width = min(self.width, input_ids.shape[1])
-        trigger_positions = (input_ids[:, -width:] == self.trigger_token_id).any(dim=1).unsqueeze(-1)
+        window_width = min(self.window_width, input_ids.shape[1])
+        trigger_positions = (input_ids[:, -window_width:] == self.trigger_token_id).any(dim=1).unsqueeze(-1)
 
         disallowed_tokens_mask = torch.ones_like(scores, dtype=torch.bool)
         disallowed_tokens_mask[:, self.allowed_token_ids] = False
