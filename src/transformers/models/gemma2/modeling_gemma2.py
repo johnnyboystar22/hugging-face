@@ -580,7 +580,7 @@ class Gemma2DecoderLayer(nn.Module):
                 )
                 attention_mask = torch.where(sliding_window_mask, min_dtype, attention_mask)
                 if attention_mask.shape[1] <= 1:  # when decoding
-                    attention_mask = attention_mask[:, :, :, -self.sliding_window :]
+                    attention_mask = attention_mask[:, -self.sliding_window :]
 
         residual = hidden_states
 
