@@ -116,7 +116,7 @@
   - local: custom_models
     title: 사용자 정의 모델 공유하기
   - local: in_translation
-    title: (번역중) Templates for chat models
+    title: (번역중) Chat templates
   - local: in_translation
     title: (번역중) Trainer
   - local: sagemaker
