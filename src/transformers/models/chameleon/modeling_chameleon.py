@@ -1068,9 +1068,8 @@ class ChameleonVQVAEDecoder(nn.Module):
         self.norm_out = torch.nn.GroupNorm(num_groups=32, num_channels=block_in, eps=1e-6, affine=True)
         self.conv_out = torch.nn.Conv2d(block_in, out_channels, kernel_size=3, stride=1, padding=1)
 
-    def forward(self, image_tokens: torch.LongTensor):
-        # image_tokens to block_in
-        hidden_state = self.conv_in(image_tokens)
+    def forward(self, hidden_state: torch.FloatTensor):
+        hidden_state = self.conv_in(hidden_state)
 
         # middle
         hidden_state = self.mid.block_1(hidden_state)
@@ -1764,7 +1763,7 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
                     AllowOnlyTokensInRelativeWindowLogitsProcessor(
                         trigger_token_id=self.vocabulary_mapping.boi_token_id,
                         allowed_token_ids=self.vocabulary_mapping.image_token_ids,
-                        width=self.model.vqmodel.quantize.quant_state_flattened_dim,
+                        window_width=self.model.vqmodel.quantize.quant_state_flattened_dim,
                         exclusive=True,
                         device=self.device,
                     ),
@@ -1794,7 +1793,7 @@ class ChameleonForConditionalGeneration(ChameleonPreTrainedModel):
                     AllowOnlyTokensInRelativeWindowLogitsProcessor(
                         trigger_token_id=self.vocabulary_mapping.boi_token_id,
                         allowed_token_ids=self.vocabulary_mapping.image_token_ids,
-                        width=self.model.vqmodel.quantize.quant_state_flattened_dim,
+                        window_width=self.model.vqmodel.quantize.quant_state_flattened_dim,
                         exclusive=True,
                         device=self.device,
                     ),
