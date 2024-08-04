@@ -61,8 +61,6 @@ class ChameleonVQVAEConfig(PretrainedConfig):
             Attention type used in VQ-GAN encoder. Can be "vanilla" or None.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        quant_state_dims (`List[int]`, *optional*, defaults to `[32, 32]`):
-            Dimensions of the quantized image tokens state.
     """
 
     model_type = "chameleon_vqgan"
@@ -83,7 +81,6 @@ class ChameleonVQVAEConfig(PretrainedConfig):
         dropout: float = 0.0,
         attn_type: str = "vanilla",
         initializer_range=0.02,
-        quant_state_dims: List[int] = [32, 32],
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -101,7 +98,6 @@ class ChameleonVQVAEConfig(PretrainedConfig):
         self.dropout = dropout
         self.attn_type = attn_type
         self.initializer_range = initializer_range
-        self.quant_state_dims = quant_state_dims
 
 
 class ChameleonConfig(PretrainedConfig):

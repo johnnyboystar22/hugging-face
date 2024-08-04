@@ -755,14 +755,14 @@ class ChameleonVQVAEVectorQuantizer(nn.Module):
         super().__init__()
         self.num_embeddings = config.num_embeddings
         self.embedding_dim = config.embed_dim
-        self.quant_state_dims = config.quant_state_dims
+        self.quant_state_dims = [config.resolution // 2**(len(config.channel_multiplier) - 1)]*2
         self.quant_state_flattened_dim = self.quant_state_dims[0] * self.quant_state_dims[1]
         self.beta = getattr(config, "beta", 0.25)
 
         self.embedding = nn.Embedding(self.num_embeddings, self.embedding_dim)
         self.re_embed = self.num_embeddings
 
-    def forward(self, hidden_state: torch.Tensor):
+    def forward(self, hidden_state: torch.FloatTensor):
         batch_size = hidden_state.shape[0]
         hidden_state = hidden_state.permute(0, 2, 3, 1).contiguous()
         hidden_state_flattened = hidden_state.view(-1, self.embedding_dim)
@@ -790,7 +790,7 @@ class ChameleonVQVAEVectorQuantizer(nn.Module):
 
         return hidden_state_quant, loss, min_encoding_indices.view(batch_size, -1)
 
-    def get_codebook_entry(self, image_tokens: torch.Tensor) -> torch.Tensor:
+    def get_codebook_entry(self, image_tokens: torch.LongTensor) -> torch.FloatTensor:
         batch_size = image_tokens.shape[0]
         emb_dim: int = self.embedding.weight.shape[-1]
         # get quantized latent vectors
@@ -881,7 +881,7 @@ class ChameleonVQVAEAttnBlock(nn.Module):
         self.v = torch.nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
         self.proj_out = torch.nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states: torch.FloatTensor) -> torch.FloatTensor:
         residual = hidden_states
         hidden_states = self.norm(hidden_states)
         query_states = self.q(hidden_states)
@@ -975,7 +975,7 @@ class ChameleonVQVAEEncoder(nn.Module):
             padding=1,
         )
 
-    def forward(self, pixel_values: torch.LongTensor):
+    def forward(self, pixel_values: torch.FloatTensor) -> torch.FloatTensor:
         # downsampling
         hidden_states = [self.conv_in(pixel_values)]
         for i_level in range(self.num_resolutions):
@@ -1068,7 +1068,7 @@ class ChameleonVQVAEDecoder(nn.Module):
         self.norm_out = torch.nn.GroupNorm(num_groups=32, num_channels=block_in, eps=1e-6, affine=True)
         self.conv_out = torch.nn.Conv2d(block_in, out_channels, kernel_size=3, stride=1, padding=1)
 
-    def forward(self, hidden_state: torch.FloatTensor):
+    def forward(self, hidden_state: torch.FloatTensor) -> torch.FloatTensor:
         hidden_state = self.conv_in(hidden_state)
 
         # middle
@@ -1150,11 +1150,11 @@ class ChameleonVQVAE(PreTrainedModel):
                 The tensors corresponding to the input images.
 
         Returns:
-            quant (`torch.FloatTensor` of shape `(batch_size, embed_dim, quant_state_dims[0], quant_state_dims[1])`):
+            quant (`torch.FloatTensor` of shape `(batch_size, embed_dim, quantize.quant_state_dims[0], quantize.quant_state_dims[1])`):
                 Embeddings of quantized tokens.
             emb_loss (`torch.FloatTensor`):
                 Embedding loss.
-            indices (`torch.LongTensor` of shape `(batch_size, quant_state_dims[0] * quant_state_dims[1])`):
+            indices (`torch.LongTensor` of shape `(batch_size, quantize.quant_state_dims[0] * quantize.quant_state_dims[1])`):
                 Token IDs
         """
         hidden_states = self.encoder(pixel_values)
@@ -1167,7 +1167,7 @@ class ChameleonVQVAE(PreTrainedModel):
         Decodes quantized token IDs into pixel values.
 
         Args:
-            image_tokens (`torch.LongTensor` of shape `(batch_size, quant_state_dims[0] * quant_state_dims[1])`):
+            image_tokens (`torch.LongTensor` of shape `(batch_size, quantize.quant_state_dims[0] * quantize.quant_state_dims[1])`):
                 Batch of token IDs.
 
         Returns:
