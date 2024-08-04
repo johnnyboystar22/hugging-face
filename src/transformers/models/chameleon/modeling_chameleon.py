@@ -1389,11 +1389,14 @@ class ChameleonModel(ChameleonPreTrainedModel):
         )
         self.norm = ChameleonRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.vqmodel = ChameleonVQVAE(config.vq_config)
-        self.image_seq_length = self.vqmodel.quantize.quant_state_dims[0] * self.vqmodel.quantize.quant_state_dims[1]
         self.gradient_checkpointing = False
 
         # Initialize weights and apply final processing
         self.post_init()
+
+    @property
+    def image_seq_length(self) -> int:
+        return self.vqmodel.quantize.quant_state_dims[0] * self.vqmodel.quantize.quant_state_dims[1]
 
     def get_input_embeddings(self):
         return self.embed_tokens
