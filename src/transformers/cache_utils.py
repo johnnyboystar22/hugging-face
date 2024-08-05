@@ -28,6 +28,9 @@ class Cache(torch.nn.Module):
     Base, abstract class for all caches. The actual data structure is specific to each subclass.
     """
 
+    is_static = False
+    is_sliding = False
+
     def __init__(self):
         super().__init__()
 
@@ -750,6 +753,8 @@ class SinkCache(Cache):
             The number of sink tokens. See the original paper for more information.
     """
 
+    is_sliding = True
+
     def __init__(self, window_length: int, num_sink_tokens: int) -> None:
         super().__init__()
         self.key_cache: List[torch.Tensor] = []
@@ -919,6 +924,8 @@ class StaticCache(Cache):
             The default `dtype` to use when initializing the layer.
     """
 
+    is_static = True
+
     def __init__(self, config: PretrainedConfig, max_batch_size: int, max_cache_len: int, device, dtype=None) -> None:
         super().__init__()
         self.max_batch_size = max_batch_size
@@ -1048,6 +1055,8 @@ class SlidingWindowCache(StaticCache):
         dtype (*optional*, defaults to `torch.float32`):
             The default `dtype` to use when initializing the layer.
     """
+
+    is_sliding = True
 
     def __init__(self, config: PretrainedConfig, max_batch_size: int, max_cache_len: int, device, dtype=None) -> None:
         super().__init__()
