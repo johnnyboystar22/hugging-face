@@ -16,7 +16,7 @@
 # limitations under the License.
 from copy import deepcopy
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from huggingface_hub import InferenceClient
 
@@ -70,12 +70,14 @@ class HfEngine:
         self.model = model
         self.client = InferenceClient(model=self.model, timeout=120)
 
-    def __call__(self, messages: List[Dict[str, str]], stop_sequences=[]) -> str:
+    def __call__(
+        self, messages: List[Dict[str, str]], stop_sequences: List[str] = [], grammar: Optional[str] = None
+    ) -> str:
         # Get clean message list
         messages = get_clean_message_list(messages, role_conversions=llama_role_conversions)
 
         # Get LLM output
-        response = self.client.chat_completion(messages, stop=stop_sequences, max_tokens=1500)
+        response = self.client.chat_completion(messages, stop=stop_sequences, max_tokens=1500, response_format=grammar)
         response = response.choices[0].message.content
 
         # Remove stop sequences from LLM output
