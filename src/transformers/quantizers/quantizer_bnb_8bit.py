@@ -58,15 +58,23 @@ class Bnb8BitHfQuantizer(HfQuantizer):
             self.modules_to_not_convert = self.quantization_config.llm_int8_skip_modules
 
     def validate_environment(self, *args, **kwargs):
-        if not torch.cuda.is_available():
-            raise RuntimeError("No GPU found. A GPU is needed for quantization.")
-
         if not is_accelerate_available():
             raise ImportError("Using `bitsandbytes` 8-bit quantization requires Accelerate: `pip install accelerate`")
         if not is_bitsandbytes_available():
             raise ImportError(
                 "Using `bitsandbytes` 8-bit quantization requires the latest version of bitsandbytes: `pip install -U bitsandbytes`"
             )
+        import bitsandbytes as bnb
+
+        bnb_is_multibackend_enabled = "multi_backend" in getattr(bnb, "features", set())
+
+        if not torch.cuda.is_available():
+            import bitsandbytes as bnb
+
+            if not bnb_is_multibackend_enabled:
+                raise RuntimeError(
+                    "Current bitsandbytes (`main`) only supports CUDA, please switch to the `multi-backend-refactor` preview release for WIP support of other backends."
+                )
 
         if kwargs.get("from_tf", False) or kwargs.get("from_flax", False):
             raise ValueError(
@@ -83,7 +91,9 @@ class Bnb8BitHfQuantizer(HfQuantizer):
             device_map_without_lm_head = {
                 key: device_map[key] for key in device_map.keys() if key not in self.modules_to_not_convert
             }
-            if "cpu" in device_map_without_lm_head.values() or "disk" in device_map_without_lm_head.values():
+            if set(device_map.values()) == {"cpu"} and bnb_is_multibackend_enabled:
+                pass
+            elif "cpu" in device_map_without_lm_head.values() or "disk" in device_map_without_lm_head.values():
                 raise ValueError(
                     "Some modules are dispatched on the CPU or the disk. Make sure you have enough GPU RAM to fit the "
                     "quantized model. If you want to dispatch the model on the CPU or the disk while keeping these modules "
@@ -118,7 +128,7 @@ class Bnb8BitHfQuantizer(HfQuantizer):
         return torch_dtype
 
     def update_device_map(self, device_map):
-        if device_map is None:
+        if device_map is None and torch.cuda.is_available():
             device_map = {"": torch.cuda.current_device()}
             logger.info(
                 "The device_map was not initialized. "
