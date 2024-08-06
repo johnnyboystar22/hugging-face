@@ -488,6 +488,7 @@ _import_structure = {
         "InstructBlipVideoQFormerConfig",
         "InstructBlipVideoVisionConfig",
     ],
+    "models.jais": ["JAISConfig"],
     "models.jamba": ["JambaConfig"],
     "models.jetmoe": ["JetMoeConfig"],
     "models.kosmos2": [
@@ -2385,6 +2386,14 @@ else:
             "InstructBlipVideoPreTrainedModel",
             "InstructBlipVideoQFormerModel",
             "InstructBlipVideoVisionModel",
+        ]
+    )
+    _import_structure["models.jais"].extend(
+        [
+            "JAISLMHeadModel",
+            "JAISForSequenceClassification",
+            "JAISModel",
+            "JAISPreTrainedModel",
         ]
     )
     _import_structure["models.jamba"].extend(
@@ -5192,6 +5201,7 @@ if TYPE_CHECKING:
         InstructBlipVideoQFormerConfig,
         InstructBlipVideoVisionConfig,
     )
+    from .models.jais import JAISConfig
     from .models.jamba import JambaConfig
     from .models.jetmoe import JetMoeConfig
     from .models.kosmos2 import (
@@ -6928,6 +6938,12 @@ if TYPE_CHECKING:
             InstructBlipVideoPreTrainedModel,
             InstructBlipVideoQFormerModel,
             InstructBlipVideoVisionModel,
+        )
+        from .models.jais import (
+            JAISLMHeadModel,
+            JAISForSequenceClassification,
+            JAISModel,
+            JAISPreTrainedModel,
         )
         from .models.jamba import (
             JambaForCausalLM,
