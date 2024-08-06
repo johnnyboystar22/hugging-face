@@ -515,6 +515,7 @@ _import_structure = {
     "models.layoutxlm": ["LayoutXLMProcessor"],
     "models.led": ["LEDConfig", "LEDTokenizer"],
     "models.levit": ["LevitConfig"],
+    "models.lightglue": ["LightGlueConfig"],
     "models.lilt": ["LiltConfig"],
     "models.llama": ["LlamaConfig"],
     "models.llava": [
@@ -720,6 +721,7 @@ _import_structure = {
     ],
     "models.stablelm": ["StableLmConfig"],
     "models.starcoder2": ["Starcoder2Config"],
+    "models.superglue": ["SuperGlueConfig"],
     "models.superpoint": ["SuperPointConfig"],
     "models.swiftformer": ["SwiftFormerConfig"],
     "models.swin": ["SwinConfig"],
@@ -1163,6 +1165,7 @@ else:
     _import_structure["models.layoutlmv2"].extend(["LayoutLMv2FeatureExtractor", "LayoutLMv2ImageProcessor"])
     _import_structure["models.layoutlmv3"].extend(["LayoutLMv3FeatureExtractor", "LayoutLMv3ImageProcessor"])
     _import_structure["models.levit"].extend(["LevitFeatureExtractor", "LevitImageProcessor"])
+    _import_structure["models.lightglue"].extend(["LightGlueImageProcessor"])
     _import_structure["models.llava_next"].append("LlavaNextImageProcessor")
     _import_structure["models.llava_next_video"].append("LlavaNextVideoImageProcessor")
     _import_structure["models.mask2former"].append("Mask2FormerImageProcessor")
@@ -2453,6 +2456,12 @@ else:
             "LevitPreTrainedModel",
         ]
     )
+    _import_structure["models.lightglue"].extend(
+        [
+            "LightGlueForKeypointMatching",
+            "LightGluePreTrainedModel",
+        ]
+    )
     _import_structure["models.lilt"].extend(
         [
             "LiltForQuestionAnswering",
@@ -3222,6 +3231,12 @@ else:
             "Starcoder2ForTokenClassification",
             "Starcoder2Model",
             "Starcoder2PreTrainedModel",
+        ]
+    )
+    _import_structure["models.superglue"].extend(
+        [
+            "SuperGlueForKeypointMatching",
+            "SuperGluePreTrainedModel",
         ]
     )
     _import_structure["models.superpoint"].extend(
@@ -5200,6 +5215,7 @@ if TYPE_CHECKING:
     from .models.layoutxlm import LayoutXLMProcessor
     from .models.led import LEDConfig, LEDTokenizer
     from .models.levit import LevitConfig
+    from .models.lightglue import LightGlueConfig
     from .models.lilt import LiltConfig
     from .models.llama import LlamaConfig
     from .models.llava import (
@@ -5431,6 +5447,7 @@ if TYPE_CHECKING:
     )
     from .models.stablelm import StableLmConfig
     from .models.starcoder2 import Starcoder2Config
+    from .models.superglue import SuperGlueConfig
     from .models.superpoint import SuperPointConfig
     from .models.swiftformer import (
         SwiftFormerConfig,
@@ -5883,6 +5900,7 @@ if TYPE_CHECKING:
             LayoutLMv3ImageProcessor,
         )
         from .models.levit import LevitFeatureExtractor, LevitImageProcessor
+        from .models.lightglue import LightGlueImageProcessor
         from .models.llava_next import LlavaNextImageProcessor
         from .models.llava_next_video import LlavaNextVideoImageProcessor
         from .models.mask2former import Mask2FormerImageProcessor
@@ -6960,6 +6978,10 @@ if TYPE_CHECKING:
             LevitModel,
             LevitPreTrainedModel,
         )
+        from .models.lightglue import (
+            LightGlueForKeypointMatching,
+            LightGluePreTrainedModel,
+        )
         from .models.lilt import (
             LiltForQuestionAnswering,
             LiltForSequenceClassification,
@@ -7564,6 +7586,10 @@ if TYPE_CHECKING:
             Starcoder2ForTokenClassification,
             Starcoder2Model,
             Starcoder2PreTrainedModel,
+        )
+        from .models.superglue import (
+            SuperGlueForKeypointMatching,
+            SuperGluePreTrainedModel,
         )
         from .models.superpoint import (
             SuperPointForKeypointDetection,
