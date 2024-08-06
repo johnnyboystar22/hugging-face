@@ -684,6 +684,12 @@ _import_structure = {
         "SamPromptEncoderConfig",
         "SamVisionConfig",
     ],
+    "models.sam2": [
+        "Sam2Config",
+        "Sam2ImageEncoderConfig",
+        "Sam2MemoryAttentionConfig",
+        "Sam2MemoryEncoderConfig",
+    ],
     "models.seamless_m4t": [
         "SeamlessM4TConfig",
         "SeamlessM4TFeatureExtractor",
@@ -3120,6 +3126,14 @@ else:
             "SamPreTrainedModel",
         ]
     )
+    _import_structure["models.sam2"].extend(
+        [
+            "Sam2ImagePredictor",
+            "Sam2Model",
+            "Sam2PreTrainedModel",
+            "Sam2VideoPredictor",
+        ]
+    )
     _import_structure["models.seamless_m4t"].extend(
         [
             "SeamlessM4TCodeHifiGan",
@@ -5412,6 +5426,7 @@ if TYPE_CHECKING:
         SamPromptEncoderConfig,
         SamVisionConfig,
     )
+    from .models.sam2 import Sam2Config, Sam2ImageEncoderConfig, Sam2MemoryAttentionConfig, Sam2MemoryEncoderConfig
     from .models.seamless_m4t import (
         SeamlessM4TConfig,
         SeamlessM4TFeatureExtractor,
@@ -7501,6 +7516,12 @@ if TYPE_CHECKING:
         from .models.sam import (
             SamModel,
             SamPreTrainedModel,
+        )
+        from .models.sam2 import (
+            Sam2ImagePredictor,
+            Sam2Model,
+            Sam2PreTrainedModel,
+            Sam2VideoPredictor,
         )
         from .models.seamless_m4t import (
             SeamlessM4TCodeHifiGan,
