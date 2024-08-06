@@ -79,8 +79,8 @@
         title: (번역중) Image Feature Extraction
       - local: in_translation
         title: (번역중) Mask Generation
-      - local: in_translation
-        title: (번역중) Knowledge Distillation for Computer Vision
+      - local: tasks/knowledge_distillation_for_image_classification
+        title: 컴퓨터 비전(이미지 분류)를 위한 지식 증류(knowledge distillation)
     title: 컴퓨터 비전
   - isExpanded: false
     sections:
