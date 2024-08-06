@@ -16,8 +16,6 @@
 Image/Text processor class for ALIGN
 """
 
-from typing import List, Union
-
 
 try:
     from typing import Unpack
@@ -162,3 +160,6 @@ class AlignProcessor(ProcessorMixin):
         tokenizer_input_names = self.tokenizer.model_input_names
         image_processor_input_names = self.image_processor.model_input_names
         return list(dict.fromkeys(tokenizer_input_names + image_processor_input_names))
+
+
+__all__ = ["AlignProcessor"]
