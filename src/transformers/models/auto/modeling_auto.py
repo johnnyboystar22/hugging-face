@@ -86,6 +86,7 @@ MODEL_MAPPING_NAMES = OrderedDict(
         ("detr", "DetrModel"),
         ("dinat", "DinatModel"),
         ("dinov2", "Dinov2Model"),
+        ("dinov2_with_registers", "Dinov2WithRegistersModel"),
         ("distilbert", "DistilBertModel"),
         ("donut-swin", "DonutSwinModel"),
         ("dpr", "DPRQuestionEncoder"),
@@ -533,6 +534,7 @@ MODEL_FOR_IMAGE_MAPPING_NAMES = OrderedDict(
         ("detr", "DetrModel"),
         ("dinat", "DinatModel"),
         ("dinov2", "Dinov2Model"),
+        ("dinov2_with_registers", "Dinov2WithRegistersModel"),
         ("dpt", "DPTModel"),
         ("efficientformer", "EfficientFormerModel"),
         ("efficientnet", "EfficientNetModel"),
@@ -605,6 +607,7 @@ MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING_NAMES = OrderedDict(
         ),
         ("dinat", "DinatForImageClassification"),
         ("dinov2", "Dinov2ForImageClassification"),
+        ("dinov2_with_registers", "Dinov2WithRegistersForImageClassification"),
         (
             "efficientformer",
             (
@@ -1263,6 +1266,7 @@ MODEL_FOR_BACKBONE_MAPPING_NAMES = OrderedDict(
         ("convnextv2", "ConvNextV2Backbone"),
         ("dinat", "DinatBackbone"),
         ("dinov2", "Dinov2Backbone"),
+        ("dinov2_with_registers", "Dinov2WithRegistersBackbone"),
         ("focalnet", "FocalNetBackbone"),
         ("hiera", "HieraBackbone"),
         ("maskformer-swin", "MaskFormerSwinBackbone"),

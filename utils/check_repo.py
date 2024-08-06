@@ -998,6 +998,7 @@ SHOULD_HAVE_THEIR_OWN_PAGE = [
     "ConvNextV2Backbone",
     "DinatBackbone",
     "Dinov2Backbone",
+    "Dinov2WithRegistersBackbone",
     "FocalNetBackbone",
     "HieraBackbone",
     "MaskFormerSwinBackbone",
