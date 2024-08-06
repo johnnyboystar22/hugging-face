@@ -312,6 +312,7 @@ _import_structure = {
         "CTRLTokenizer",
     ],
     "models.cvt": ["CvtConfig"],
+    "models.dab_detr": ["DABDETRConfig"],
     "models.data2vec": [
         "Data2VecAudioConfig",
         "Data2VecTextConfig",
@@ -1141,6 +1142,7 @@ else:
         ["ConditionalDetrFeatureExtractor", "ConditionalDetrImageProcessor"]
     )
     _import_structure["models.convnext"].extend(["ConvNextFeatureExtractor", "ConvNextImageProcessor"])
+    _import_structure["models.dab_detr"].extend(["DABDETRImageProcessor"])
     _import_structure["models.deformable_detr"].extend(
         ["DeformableDetrFeatureExtractor", "DeformableDetrImageProcessor"]
     )
@@ -1746,6 +1748,13 @@ else:
             "CvtForImageClassification",
             "CvtModel",
             "CvtPreTrainedModel",
+        ]
+    )
+    _import_structure["models.dab_detr"].extend(
+        [
+            "DABDETRForObjectDetection",
+            "DABDETRModel",
+            "DABDETRPreTrainedModel",
         ]
     )
     _import_structure["models.data2vec"].extend(
@@ -4989,6 +4998,9 @@ if TYPE_CHECKING:
         CTRLTokenizer,
     )
     from .models.cvt import CvtConfig
+    from .models.dab_detr import (
+        DABDETRConfig,
+    )
     from .models.data2vec import (
         Data2VecAudioConfig,
         Data2VecTextConfig,
@@ -5861,6 +5873,7 @@ if TYPE_CHECKING:
             ConditionalDetrImageProcessor,
         )
         from .models.convnext import ConvNextFeatureExtractor, ConvNextImageProcessor
+        from .models.dab_detr import DABDETRImageProcessor
         from .models.deformable_detr import (
             DeformableDetrFeatureExtractor,
             DeformableDetrImageProcessor,
@@ -6403,6 +6416,11 @@ if TYPE_CHECKING:
             CvtForImageClassification,
             CvtModel,
             CvtPreTrainedModel,
+        )
+        from .models.dab_detr import (
+            DABDETRForObjectDetection,
+            DABDETRModel,
+            DABDETRPreTrainedModel,
         )
         from .models.data2vec import (
             Data2VecAudioForAudioFrameClassification,
