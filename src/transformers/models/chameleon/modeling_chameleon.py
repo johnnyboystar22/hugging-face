@@ -1173,6 +1173,11 @@ class ChameleonVQVAE(PreTrainedModel):
             (`torch.FloatTensor` of shape `(batch_size, num_channels, image_size, image_size)`):
                 Pixel values decoded from the token IDs.
         """
+        if image_tokens.shape[1] != self.quantize.quant_state_dims[0] * self.quantize.quant_state_dims[1]:
+            raise ValueError(
+                f"Expected `image_tokens` to have shape `(batch_size, {self.quantize.quant_state_dims[0] * self.quantize.quant_state_dims[1]})`, "
+                f"but got shape `{image_tokens.shape}`."
+            )
         codebook_entry = self.quantize.get_codebook_entry(image_tokens)
         hidden_states = self.post_quant_conv(codebook_entry)
         pixel_values = self.decoder(hidden_states)

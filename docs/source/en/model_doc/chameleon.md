@@ -153,7 +153,7 @@ model = ChameleonForConditionalGeneration.from_pretrained(
 prompt = "Generate an image of a snowman."
 
 # Preprocess the prompt
-inputs = processor(prompt, padding=True, return_tensors="pt").to(model.device)
+inputs = processor(prompt, padding=True, return_tensors="pt").to(model.device, dtype=model.dtype)
 
 # Generate discrete image tokens
 generate_ids = model.generate(
@@ -166,12 +166,12 @@ generate_ids = model.generate(
 )
 
 # Only keep the tokens from the response
-response_ids = generate_ids[:, inputs["input_ids"].shape[-1]]
+response_ids = generate_ids[:, inputs["input_ids"].shape[-1]:]
 
 # Decode the generated image tokens
-pixel_values = model.decode_image_tokens(response_ids[, 1:-1])
+pixel_values = model.decode_image_tokens(response_ids[:, 1:-1])
 images = processor.postprocess_pixel_values(
-    pixel_values.detach().cpu().numpy()
+    pixel_values.float().detach().cpu().numpy()
 )
 
 # Save the image
@@ -208,7 +208,7 @@ inputs = processor(
     images=[image_snowman],
     padding=True,
     return_tensors="pt",
-).to(model.device)
+).to(model.device, dtype=model.dtype)
 
 # Generate discrete image tokens
 generate_ids = model.generate(
@@ -221,12 +221,12 @@ generate_ids = model.generate(
 )
 
 # Only keep the tokens from the response
-response_ids = generate_ids[:, inputs["input_ids"].shape[-1]]
+response_ids = generate_ids[:, inputs["input_ids"].shape[-1]:]
 
 # Decode the generated image tokens
-pixel_values = model.decode_image_tokens(response_ids[, 1:-1])
+pixel_values = model.decode_image_tokens(response_ids[:, 1:-1])
 images = processor.postprocess_pixel_values(
-    pixel_values.detach().cpu().numpy()
+    pixel_values.float().detach().cpu().numpy()
 )
 
 # Save the image
@@ -252,7 +252,7 @@ model = ChameleonForConditionalGeneration.from_pretrained(
 prompt = "Can you draw a snowman and explain how to build one?"
 
 # Preprocess the prompt
-inputs = processor(prompt, padding=True, return_tensors="pt").to(model.device)
+inputs = processor(prompt, padding=True, return_tensors="pt").to(model.device, dtype=model.dtype)
 
 # Generate interleaved text and discrete image tokens
 generate_ids = model.generate(
@@ -265,7 +265,7 @@ generate_ids = model.generate(
 )
 
 # Only keep the tokens from the response
-response_ids = generate_ids[:, inputs["input_ids"].shape[-1]]
+response_ids = generate_ids[:, inputs["input_ids"].shape[-1]:]
 ```
 
 From here, you can split the response tokens into text and image token segments, decode them separately as shown in the previous examples, and finally render the resulting text and images together. You can also use [MMSG](https://github.com/leloykun/mmsg) to do this more easily.
