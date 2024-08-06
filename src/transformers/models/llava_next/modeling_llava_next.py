@@ -15,6 +15,7 @@
 """PyTorch Llava-NeXT model."""
 
 import math
+import warnings
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
@@ -509,6 +510,12 @@ class LlavaNextForConditionalGeneration(LlavaNextPreTrainedModel):
         image_token_index = image_token_index if image_token_index is not None else self.config.image_token_index
         ignore_index = ignore_index if ignore_index is not None else self.config.ignore_index
 
+        if self.training and self.padding_side == "left":
+            warnings.warn("padding is left even though in training mode. If that's intended, ignore this warning")
+
+        if not self.training and self.padding_side == "right":
+            warnings.warn("padding is right even though in inference mode. If that's intended, ignore this warning")
+
         with torch.no_grad():
             # ! in llava 1.6, number of patches is variable
             num_images = feature_lens.size(0)
@@ -519,7 +526,7 @@ class LlavaNextForConditionalGeneration(LlavaNextPreTrainedModel):
             _left_padding = torch.any(attention_mask[:, 0] == 0)
             _right_padding = torch.any(attention_mask[:, -1] == 0)
 
-            left_padding = True if not self.training else False
+            left_padding = self.padding_side == "left"
             if batch_size > 1 and not self.training:
                 if _left_padding and not _right_padding:
                     left_padding = True
