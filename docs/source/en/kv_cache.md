@@ -142,7 +142,7 @@ I like rock music because it's loud and energetic. It's a great way to express m
 I like rock music because it's loud and energetic. I like to listen to it when I'm feeling
 ```
 
-## OffloadedCache
+## Offloaded Cache
 
 Similarly to KV cache quantization, [`~OffloadedCache`] strategy aims to reduce GPU VRAM usage.
 It does so by moving the KV cache for most layers to the CPU.
@@ -154,7 +154,8 @@ Thus, it can serve as a drop-in replacement or a fallback for it.
 Depending on your model and the characteristics of your generation task (size of context, number of generated tokens, number of beams, etc.)
 you may notice a small degradation in generation throughput compared to the default KV cache implementation.
 
-To enable KV cache offloading, pass `cache_implementation="offloaded"` in the `generation_config` or directky to the `generate()` call.
+To enable KV cache offloading, pass `cache_implementation="offloaded"` in the `generation_config` or directly to the `generate()` call.
+Use `cache_implementation="offloaded-static"` for an offloaded static cache (see also [Static Cache](#static-cache) below).
 
 ```python
 >>> import torch
@@ -216,7 +217,6 @@ retrying with cache_implementation='offloaded'
 before successfully generating 40 beams.
 
 
-
 ### Static Cache
 
 Since the "DynamicCache" dynamically grows with each generation step, it prevents you from taking advantage of JIT optimizations. The [`~StaticCache`] pre-allocates 
@@ -234,6 +234,24 @@ For more examples with Static Cache and JIT compilation, take a look at [StaticC
 
 >>> # simply pass the cache implementation="static"
 >>> out = model.generate(**inputs, do_sample=False, max_new_tokens=20, cache_implementation="static")
+>>> tokenizer.batch_decode(out, skip_special_tokens=True)[0]
+"Hello, my name is [Your Name], and I am a [Your Profession] with [Number of Years] of"
+```
+
+Like [`~OffloadedCache`] exists for offloading a "DynamicCache", there is also an offloaded static cache. Just
+pass `cache_implementation="offloaded-static"` in the `generation_config` or directly to the `generate()` call.
+This will use the [`~OffloadedStaticCache`] implementation instead.
+
+```python
+>>> import torch
+>>> from transformers import AutoTokenizer, AutoModelForCausalLM
+
+>>> tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+>>> model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf", torch_dtype=torch.float16, device_map="auto")
+>>> inputs = tokenizer("Hello, my name is", return_tensors="pt").to(model.device)
+
+>>> # simply pass the cache implementation="static"
+>>> out = model.generate(**inputs, do_sample=False, max_new_tokens=20, cache_implementation="offloaded-static")
 >>> tokenizer.batch_decode(out, skip_special_tokens=True)[0]
 "Hello, my name is [Your Name], and I am a [Your Profession] with [Number of Years] of"
 ```
